@@ -1,64 +1,54 @@
-import { useState } from 'react'
+import { NavLink } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-  { id: 'recipes', label: 'Rezepte', icon: '🍳' },
-  { id: 'ingredients', label: 'Zutaten', icon: '🥬' },
-  { id: 'inventory', label: 'Inventur', icon: '📦' },
-  { id: 'menu', label: 'Wochenmenü', icon: '📅' },
-  { id: 'orders', label: 'Bestellungen', icon: '🛒' },
-  { id: 'haccp', label: 'HACCP', icon: '🌡️' },
+  { id: '/', label: 'Dashboard', icon: '📊' },
+  { id: '/recipes', label: 'Rezepte', icon: '🍳' },
+  { id: '/ingredients', label: 'Zutaten', icon: '🥬' },
+  { id: '/inventory', label: 'Inventur', icon: '📦' },
+  { id: '/menu', label: 'Wochenmenü', icon: '📅' },
+  { id: '/orders', label: 'Bestellungen', icon: '🛒' },
+  { id: '/haccp', label: 'HACCP', icon: '🌡️' },
 ]
 
-export default function Navigation({ onSignOut }) {
-  const [activeItem, setActiveItem] = useState('dashboard')
-  const [isCollapsed, setIsCollapsed] = useState(false)
-
+export default function Navigation({ user }) {
   const handleSignOut = async () => {
     await supabase.auth.signOut()
-    if (onSignOut) onSignOut()
   }
 
   return (
-    <nav style={{
-      ...styles.sidebar,
-      width: isCollapsed ? '60px' : '240px'
-    }}>
+    <nav style={styles.sidebar}>
       <div style={styles.header}>
         <div style={styles.logo}>
           <span style={styles.logoIcon}>🍜</span>
-          {!isCollapsed && <span style={styles.logoText}>RecipeBase</span>}
+          <span style={styles.logoText}>RecipeBase</span>
         </div>
-        <button 
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          style={styles.collapseBtn}
-        >
-          {isCollapsed ? '→' : '←'}
-        </button>
       </div>
 
       <ul style={styles.menu}>
         {menuItems.map(item => (
           <li key={item.id}>
-            <button
-              onClick={() => setActiveItem(item.id)}
-              style={{
+            <NavLink
+              to={item.id}
+              style={({ isActive }) => ({
                 ...styles.menuItem,
-                background: activeItem === item.id ? 'var(--color-accent)' : 'transparent',
-              }}
+                background: isActive ? 'var(--color-accent)' : 'transparent',
+              })}
             >
               <span style={styles.icon}>{item.icon}</span>
-              {!isCollapsed && <span style={styles.label}>{item.label}</span>}
-            </button>
+              <span style={styles.label}>{item.label}</span>
+            </NavLink>
           </li>
         ))}
       </ul>
 
       <div style={styles.footer}>
+        <div style={styles.userInfo}>
+          <span style={styles.userEmail}>{user?.email?.split('@')[0]}</span>
+        </div>
         <button onClick={handleSignOut} style={styles.logoutBtn}>
           <span>🚪</span>
-          {!isCollapsed && <span>Abmelden</span>}
+          <span>Abmelden</span>
         </button>
       </div>
     </nav>
@@ -71,19 +61,16 @@ const styles = {
     left: 0,
     top: 0,
     height: '100vh',
+    width: '240px',
     background: 'var(--color-bg-card)',
     borderRight: '1px solid var(--color-border)',
     display: 'flex',
     flexDirection: 'column',
-    transition: 'width 0.3s ease',
     zIndex: 100,
   },
   header: {
     padding: '1rem',
     borderBottom: '1px solid var(--color-border)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   logo: {
     display: 'flex',
@@ -98,16 +85,6 @@ const styles = {
     fontWeight: 700,
     color: 'var(--color-accent)',
   },
-  collapseBtn: {
-    background: 'var(--color-bg-input)',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--color-text)',
-    width: '28px',
-    height: '28px',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
-  },
   menu: {
     flex: 1,
     listStyle: 'none',
@@ -117,16 +94,14 @@ const styles = {
     gap: '0.25rem',
   },
   menuItem: {
-    width: '100%',
     display: 'flex',
     alignItems: 'center',
     gap: '0.75rem',
     padding: '0.75rem',
     borderRadius: 'var(--radius-md)',
-    border: 'none',
     color: 'var(--color-text)',
     fontSize: '0.9375rem',
-    cursor: 'pointer',
+    textDecoration: 'none',
     transition: 'all 0.2s',
   },
   icon: {
@@ -141,6 +116,13 @@ const styles = {
     padding: '1rem',
     borderTop: '1px solid var(--color-border)',
   },
+  userInfo: {
+    marginBottom: '0.75rem',
+  },
+  userEmail: {
+    color: 'var(--color-text-muted)',
+    fontSize: '0.875rem',
+  },
   logoutBtn: {
     width: '100%',
     display: 'flex',
@@ -153,6 +135,5 @@ const styles = {
     color: 'var(--color-text-muted)',
     fontSize: '0.9375rem',
     cursor: 'pointer',
-    transition: 'all 0.2s',
   },
 }
