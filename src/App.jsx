@@ -2,92 +2,151 @@ import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import Auth from './components/Auth'
 import Dashboard from './components/Dashboard'
-import Recipes from './components/Recipes'
-import RecipeDetail from './components/RecipeDetail'
-import Ingredients from './components/Ingredients'
-import InvoiceAnalyzer from './components/InvoiceAnalyzer'
-import VoiceInput from './components/VoiceInput'
 
 // Rollen-Definition
 const ROLES = {
-  CHEF: 'chef',      // Vollzugriff
-  COOK: 'cook',      // Nur Rezepte ansehen
-  MANAGER: 'manager' // Rezepte + Inventur, keine Preise
+  CHEF: 'chef',
+  COOK: 'cook', 
+  MANAGER: 'manager'
 }
+
+// Navigation Items
+const NAV_ITEMS = [
+  { id: 'dashboard', label: 'Übersicht', icon: '◎', roles: ['chef', 'cook', 'manager'] },
+  { id: 'recipes', label: 'Rezepte', icon: '○', roles: ['chef', 'cook', 'manager'] },
+  { id: 'ingredients', label: 'Zutaten', icon: '□', roles: ['chef', 'manager'] },
+  { id: 'invoices', label: 'Rechnungen', icon: '△', roles: ['chef', 'manager'] },
+  { id: 'voice', label: 'Sprache', icon: '♪', roles: ['chef', 'cook'] },
+]
 
 function App() {
   const [session, setSession] = useState(null)
   const [userRole, setUserRole] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [currentView, setCurrentView] = useState('dashboard')
-  const [selectedRecipe, setSelectedRecipe] = useState(null)
 
   useEffect(() => {
-    checkSession()
-    
+    initApp()
+  }, [])
+
+  const initApp = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      setSession(session)
+      
+      if (session?.user) {
+        await loadUserRole(session.user.id)
+      }
+    } catch (err) {
+      console.error('Init error:', err)
+      setError('Verbindungsfehler. Bitte neu laden.')
+    } finally {
+      setLoading(false)
+    }
+
+    // Auth listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-      if (session) {
+      if (session?.user) {
         loadUserRole(session.user.id)
       } else {
         setUserRole(null)
-        setLoading(false)
       }
     })
 
     return () => subscription.unsubscribe()
-  }, [])
-
-  const checkSession = async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    setSession(session)
-    if (session) {
-      await loadUserRole(session.user.id)
-    }
-    setLoading(false)
   }
 
   const loadUserRole = async (userId) => {
-    const { data, error } = await supabase
-      .from('team_members')
-      .select('role')
-      .eq('id', userId)
-      .single()
-    
-    if (data) {
-      setUserRole(data.role)
+    try {
+      const { data, error } = await supabase
+        .from('team_members')
+        .select('role')
+        .eq('id', userId)
+        .single()
+      
+      if (error) {
+        console.log('No team member found, defaulting to chef')
+        setUserRole('chef') // Default für ersten User
+      } else {
+        setUserRole(data?.role || 'chef')
+      }
+    } catch (err) {
+      console.error('Role load error:', err)
+      setUserRole('chef')
     }
-    setLoading(false)
   }
 
-  // Navigation handler
-  const navigate = (view, data = null) => {
-    setCurrentView(view)
-    if (data) setSelectedRecipe(data)
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#F5F1EB'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '3px solid #E8DFCE',
+            borderTop: '3px solid #8B5A2B',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 1rem'
+          }} />
+          <p style={{ color: '#6B6258', fontSize: '14px' }}>Laden...</p>
+        </div>
+      </div>
+    )
   }
 
-  // Berechtigungs-Check
-  const canAccess = (feature) => {
-    const permissions = {
-      [ROLES.CHEF]: ['dashboard', 'recipes', 'recipe_detail', 'ingredients', 'invoices', 'voice', 'prices'],
-      [ROLES.COOK]: ['dashboard', 'recipes', 'recipe_detail', 'voice'],
-      [ROLES.MANAGER]: ['dashboard', 'recipes', 'recipe_detail', 'ingredients', 'invoices']
-    }
-    return permissions[userRole]?.includes(feature) || false
+  if (error) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#F5F1EB',
+        padding: '2rem'
+      }}>
+        <div style={{
+          background: '#FAF8F5',
+          border: '1px solid #E8DFCE',
+          borderRadius: '8px',
+          padding: '2rem',
+          maxWidth: '400px',
+          textAlign: 'center'
+        }}>
+          <p style={{ color: '#A04444', marginBottom: '1rem' }}>{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#8B5A2B',
+              color: 'white',
+              border: 'none',
+              padding: '0.75rem 1.5rem',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Neu laden
+          </button>
+        </div>
+      </div>
+    )
   }
 
-  if (loading) return <div className="loading">Laden...</div>
-  
-  if (!session) return <Auth onAuth={() => checkSession()} />
+  if (!session) {
+    return <Auth />
+  }
 
-  // Sidebar Navigation
-  const navItems = [
-    { id: 'dashboard', label: 'Übersicht', icon: '◎', roles: [ROLES.CHEF, ROLES.COOK, ROLES.MANAGER] },
-    { id: 'recipes', label: 'Rezepte', icon: '○', roles: [ROLES.CHEF, ROLES.COOK, ROLES.MANAGER] },
-    { id: 'ingredients', label: 'Zutaten', icon: '□', roles: [ROLES.CHEF, ROLES.MANAGER] },
-    { id: 'invoices', label: 'Rechnungen', icon: '△', roles: [ROLES.CHEF, ROLES.MANAGER] },
-    { id: 'voice', label: 'Sprache', icon: '♪', roles: [ROLES.CHEF, ROLES.COOK] },
-  ].filter(item => item.roles.includes(userRole))
+  // Filter navigation by role
+  const userRoleStr = userRole || 'chef'
+  const navItems = NAV_ITEMS.filter(item => item.roles.includes(userRoleStr))
 
   return (
     <div className="app">
@@ -102,7 +161,7 @@ function App() {
             <button
               key={item.id}
               className={`nav-item ${currentView === item.id ? 'active' : ''}`}
-              onClick={() => navigate(item.id)}
+              onClick={() => setCurrentView(item.id)}
             >
               <span className="nav-icon">{item.icon}</span>
               <span className="nav-label">{item.label}</span>
@@ -112,7 +171,9 @@ function App() {
 
         <div className="user-footer">
           <div className="user-info">
-            <span className="user-role">{userRole === ROLES.CHEF ? 'Küchenchef' : userRole === ROLES.COOK ? 'Koch' : 'Manager'}</span>
+            <span className="user-role">
+              {userRole === 'chef' ? 'Küchenchef' : userRole === 'cook' ? 'Koch' : 'Manager'}
+            </span>
           </div>
           <button className="logout-btn" onClick={() => supabase.auth.signOut()}>
             Abmelden
@@ -121,21 +182,15 @@ function App() {
       </nav>
 
       <main className="main-content">
-        {currentView === 'dashboard' && <Dashboard userRole={userRole} canAccess={canAccess} />}
-        {currentView === 'recipes' && <Recipes 
-          userRole={userRole} 
-          onRecipeClick={(recipe) => navigate('recipe_detail', recipe)}
-          canAccess={canAccess}
-        />}
-        {currentView === 'recipe_detail' && selectedRecipe && <RecipeDetail 
-          recipe={selectedRecipe} 
-          userRole={userRole}
-          onBack={() => navigate('recipes')}
-          canAccess={canAccess}
-        />}
-        {currentView === 'ingredients' && canAccess('ingredients') && <Ingredients userRole={userRole} />}
-        {currentView === 'invoices' && canAccess('invoices') && <InvoiceAnalyzer />}
-        {currentView === 'voice' && canAccess('voice') && <VoiceInput />}
+        {currentView === 'dashboard' && <Dashboard />}
+        {currentView !== 'dashboard' && (
+          <div style={{ padding: '2rem' }}>
+            <h1>{navItems.find(n => n.id === currentView)?.label}</h1>
+            <p style={{ color: '#6B6258', marginTop: '1rem' }}>
+              Dieses Modul wird noch entwickelt.
+            </p>
+          </div>
+        )}
       </main>
     </div>
   )
