@@ -22,7 +22,7 @@ export default function RecipeDetail({ userRole }) {
     setError(null)
     
     try {
-      // Load recipe with ingredients
+      // Load recipe
       const { data: recipeData, error: recipeError } = await supabase
         .from('recipes')
         .select('*')
@@ -31,8 +31,8 @@ export default function RecipeDetail({ userRole }) {
       
       if (recipeError) throw recipeError
       
-      // Load recipe ingredients with details
-      const { data: ingredientsData, error: ingredientsError } = await supabase
+      // Load ingredients
+      const { data: ingredientsData } = await supabase
         .from('recipe_ingredients')
         .select(`
           amount,
@@ -45,8 +45,6 @@ export default function RecipeDetail({ userRole }) {
           )
         `)
         .eq('recipe_id', id)
-      
-      if (ingredientsError) throw ingredientsError
       
       setRecipe(recipeData)
       setIngredients(ingredientsData || [])
@@ -72,28 +70,17 @@ export default function RecipeDetail({ userRole }) {
 
   if (loading) {
     return (
-      <div className="recipe-detail loading">
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
         <div className="spinner" />
         <p>Rezept wird geladen...</p>
       </div>
     )
   }
 
-  if (error) {
+  if (error || !recipe) {
     return (
-      <div className="recipe-detail error">
-        <p className="error-message">{error}</p>
-        <button className="btn-secondary" onClick={() => navigate('/recipes')}>
-          Zurück zu den Rezepten
-        </button>
-      </div>
-    )
-  }
-
-  if (!recipe) {
-    return (
-      <div className="recipe-detail error">
-        <p>Rezept nicht gefunden</p>
+      <div style={{ padding: '2rem' }}>
+        <p style={{ color: '#A04444' }}>{error || 'Rezept nicht gefunden'}</p>
         <button className="btn-secondary" onClick={() => navigate('/recipes')}>
           Zurück zu den Rezepten
         </button>
@@ -103,7 +90,6 @@ export default function RecipeDetail({ userRole }) {
 
   return (
     <div className="recipe-detail">
-      {/* Header */}
       <header className="detail-header">
         <div className="header-left">
           <button className="btn-back" onClick={() => navigate('/recipes')}>
@@ -119,11 +105,8 @@ export default function RecipeDetail({ userRole }) {
         </div>
         
         <div className="header-actions">
-          <button 
-            className="btn-secondary"
-            onClick={() => setShowVoiceModal(true)}
-          >
-            🎤 Voice
+          <button className="btn-secondary" onClick={() => setShowVoiceModal(true)}>
+            🎤 Ergänzen
           </button>
           {userRole === 'chef' && (
             <button className="btn-primary">Bearbeiten</button>
@@ -132,7 +115,6 @@ export default function RecipeDetail({ userRole }) {
       </header>
 
       <div className="detail-grid">
-        {/* Left Column - Image & Info */}
         <div className="detail-main">
           <div className="recipe-image-card">
             {recipe.image_url ? (
@@ -166,19 +148,19 @@ export default function RecipeDetail({ userRole }) {
           </div>
 
           {recipe.description && (
-            <div className="description-card">
+            <div className="card">
               <h3>Beschreibung</h3>
               <p>{recipe.description}</p>
             </div>
           )}
 
           {recipe.steps && recipe.steps.length > 0 && (
-            <div className="steps-card">
+            <div className="card">
               <h3>Zubereitung</h3>
               <ol className="steps-list">
-                {recipe.steps.map((step, index) => (
-                  <li key={index} className="step-item">
-                    <span className="step-number">{index + 1}</span>
+                {recipe.steps.map((step, idx) => (
+                  <li key={idx} className="step-item">
+                    <span className="step-number">{idx + 1}</span>
                     <span className="step-text">{step}</span>
                   </li>
                 ))}
@@ -187,29 +169,39 @@ export default function RecipeDetail({ userRole }) {
           )}
         </div>
 
-        {/* Right Column - Ingredients & Costs */}
         <div className="detail-sidebar">
-          {/* Cost Card */}
-          <div className="cost-card">
+          <div className="card">
             <h3>Kalkulation</h3>
-            <div className="cost-grid">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div className="cost-item">
-                <span className="cost-label">Gesamtkosten</span>
-                <span className="cost-value">{calculateCost().toFixed(2)} €</span>
+                <span>Gesamtkosten</span>
+                <span style={{ fontFamily: 'var(--font-serif)', fontSize: '1.125rem' }}>
+                  {calculateCost().toFixed(2)} €
+                </span>
               </div>
               <div className="cost-item">
-                <span className="cost-label">Kosten/Portion</span>
-                <span className="cost-value">{costPerPortion.toFixed(2)} €</span>
+                <span>Kosten/Portion</span>
+                <span style={{ fontFamily: 'var(--font-serif)', fontSize: '1.125rem' }}>
+                  {costPerPortion.toFixed(2)} €
+                </span>
               </div>
               {recipe.selling_price > 0 && (
                 <>
                   <div className="cost-item">
-                    <span className="cost-label">Verkaufspreis</span>
-                    <span className="cost-value">{recipe.selling_price.toFixed(2)} €</span>
+                    <span>Verkaufspreis</span>
+                    <span>{recipe.selling_price.toFixed(2)} €</span>
                   </div>
-                  <div className="cost-item highlight">
-                    <span className="cost-label">Marge</span>
-                    <span className={`cost-value margin-${margin >= 60 ? 'good' : margin >= 40 ? 'ok' : 'bad'}`}>
+                  <div className="cost-item" style={{ 
+                    background: 'var(--cream)', 
+                    margin: '0 -1rem', 
+                    padding: '0.75rem 1rem',
+                    borderRadius: '4px'
+                  }}>
+                    <span>Marge</span>
+                    <span style={{ 
+                      color: margin >= 60 ? '#5A7A4F' : margin >= 40 ? '#B8843E' : '#A64444',
+                      fontWeight: 600
+                    }}>
                       {margin}%
                     </span>
                   </div>
@@ -218,45 +210,53 @@ export default function RecipeDetail({ userRole }) {
             </div>
           </div>
 
-          {/* Ingredients Card */}
-          <div className="ingredients-card">
+          <div className="card">
             <h3>Zutaten</h3>
-            <div className="ingredients-list">
-              {ingredients.length === 0 ? (
-                <p className="empty">Keine Zutaten hinterlegt</p>
-              ) : (
-                ingredients.map((item, index) => (
-                  <div key={index} className="ingredient-row">
-                    <div className="ingredient-main">
-                      <span className="ingredient-name">
-                        {item.ingredients?.name}
-                        {item.ingredients?.original_name && (
-                          <span className="original"> ({item.ingredients.original_name})</span>
-                        )}
-                      </span>
-                      <span className="ingredient-amount">
+            {ingredients.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Keine Zutaten hinterlegt</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {ingredients.map((item, index) => (
+                  <div key={index} style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    padding: '0.5rem 0',
+                    borderBottom: '1px solid var(--cream-dark)'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 500 }}>{item.ingredients?.name}</div>
+                      {item.ingredients?.original_name && (
+                        <div style={{ fontSize: '0.8125rem', color: 'var(--cognac)', fontStyle: 'italic' }}>
+                          {item.ingredients.original_name}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
                         {item.amount} {item.ingredients?.unit}
-                      </span>
+                      </div>
                     </div>
                     {userRole === 'chef' && (
-                      <span className="ingredient-cost">
+                      <div style={{ fontFamily: 'var(--font-serif)' }}>
                         {(item.amount * (item.ingredients?.current_price || 0)).toFixed(2)} €
-                      </span>
+                      </div>
                     )}
                   </div>
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Allergens Card */}
-          {recipe.allergens && recipe.allergens.length > 0 && (
-            <div className="allergens-card">
+          {recipe.allergens?.length > 0 && (
+            <div className="card">
               <h3>Allergene</h3>
-              <div className="allergens-list">
-                {recipe.allergens.map((allergen, index) => (
-                  <span key={index} className="allergen-tag">
-                    {allergen}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {recipe.allergens.map((a, i) => (
+                  <span key={i} style={{
+                    fontSize: '0.75rem',
+                    padding: '0.375rem 0.75rem',
+                    background: 'var(--cream)',
+                    borderRadius: '4px'
+                  }}>
+                    {a}
                   </span>
                 ))}
               </div>
@@ -267,21 +267,48 @@ export default function RecipeDetail({ userRole }) {
 
       {/* Voice Modal */}
       {showVoiceModal && (
-        <div className="modal-overlay" onClick={() => setShowVoiceModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Rezept ergänzen per Sprache</h3>
-              <button className="btn-close" onClick={() => setShowVoiceModal(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <p className="hint">
-                Halte den Button gedrückt und sprich in Vietnamesisch, Deutsch oder Englisch.
-              </p>
-              <button className="voice-record-btn">
-                <span className="pulse"></span>
-                Halten zum Sprechen
-              </button>
-            </div>
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(10, 9, 8, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem'
+          }}
+          onClick={() => setShowVoiceModal(false)}
+        >
+          <div 
+            style={{
+              background: 'var(--paper)',
+              borderRadius: '8px',
+              padding: '2rem',
+              maxWidth: '480px',
+              width: '100%'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3>Rezept ergänzen per Sprache</h3>
+            <p style={{ color: 'var(--text-muted)', margin: '1rem 0' }}>
+              Halte den Button gedrückt und sprich in Vietnamesisch, Deutsch oder Englisch.
+            </p>
+            <button 
+              style={{
+                width: '100%',
+                padding: '1.5rem',
+                background: 'var(--charcoal)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                marginTop: '1rem'
+              }}
+            >
+              🎤 Aufnahme starten
+            </button>
           </div>
         </div>
       )}

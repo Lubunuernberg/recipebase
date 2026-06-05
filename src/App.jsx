@@ -1,30 +1,27 @@
 import { useState, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import Auth from './components/Auth'
 import Dashboard from './components/Dashboard'
+import Recipes from './components/Recipes'
+import RecipeDetail from './components/RecipeDetail'
+import Ingredients from './components/Ingredients'
+import InvoiceAnalyzer from './components/InvoiceAnalyzer'
+import VoiceInput from './components/VoiceInput'
 
 // Rollen-Definition
 const ROLES = {
   CHEF: 'chef',
-  COOK: 'cook', 
+  COOK: 'cook',
   MANAGER: 'manager'
 }
 
-// Navigation Items
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Übersicht', icon: '◎', roles: ['chef', 'cook', 'manager'] },
-  { id: 'recipes', label: 'Rezepte', icon: '○', roles: ['chef', 'cook', 'manager'] },
-  { id: 'ingredients', label: 'Zutaten', icon: '□', roles: ['chef', 'manager'] },
-  { id: 'invoices', label: 'Rechnungen', icon: '△', roles: ['chef', 'manager'] },
-  { id: 'voice', label: 'Sprache', icon: '♪', roles: ['chef', 'cook'] },
-]
-
-function App() {
+function AppContent() {
+  const navigate = useNavigate()
   const [session, setSession] = useState(null)
   const [userRole, setUserRole] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [currentView, setCurrentView] = useState('dashboard')
 
   useEffect(() => {
     initApp()
@@ -45,7 +42,6 @@ function App() {
       setLoading(false)
     }
 
-    // Auth listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       if (session?.user) {
@@ -68,7 +64,7 @@ function App() {
       
       if (error) {
         console.log('No team member found, defaulting to chef')
-        setUserRole('chef') // Default für ersten User
+        setUserRole('chef')
       } else {
         setUserRole(data?.role || 'chef')
       }
@@ -144,55 +140,74 @@ function App() {
     return <Auth />
   }
 
-  // Filter navigation by role
-  const userRoleStr = userRole || 'chef'
-  const navItems = NAV_ITEMS.filter(item => item.roles.includes(userRoleStr))
-
   return (
     <div className="app">
-      <nav className="sidebar">
-        <div className="logo">
-          <span className="logo-icon">◎</span>
-          <span className="logo-text">Recipe<span className="accent">Base</span></span>
-        </div>
-        
-        <div className="nav-sections">
-          {navItems.map(item => (
-            <button
-              key={item.id}
-              className={`nav-item ${currentView === item.id ? 'active' : ''}`}
-              onClick={() => setCurrentView(item.id)}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              <span className="nav-label">{item.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="user-footer">
-          <div className="user-info">
-            <span className="user-role">
-              {userRole === 'chef' ? 'Küchenchef' : userRole === 'cook' ? 'Koch' : 'Manager'}
-            </span>
-          </div>
-          <button className="logout-btn" onClick={() => supabase.auth.signOut()}>
-            Abmelden
-          </button>
-        </div>
-      </nav>
-
+      <Sidebar userRole={userRole} />
       <main className="main-content">
-        {currentView === 'dashboard' && <Dashboard />}
-        {currentView !== 'dashboard' && (
-          <div style={{ padding: '2rem' }}>
-            <h1>{navItems.find(n => n.id === currentView)?.label}</h1>
-            <p style={{ color: '#6B6258', marginTop: '1rem' }}>
-              Dieses Modul wird noch entwickelt.
-            </p>
-          </div>
-        )}
+        <Routes>
+          <Route path="/" element={<Dashboard userRole={userRole} />} />
+          <Route path="/recipes" element={<Recipes userRole={userRole} />} />
+          <Route path="/recipe/:id" element={<RecipeDetail userRole={userRole} />} />
+          <Route path="/ingredients" element={userRole !== 'cook' ? <Ingredients userRole={userRole} /> : <Navigate to="/" />} />
+          <Route path="/invoices" element={userRole !== 'cook' ? <InvoiceAnalyzer /> : <Navigate to="/" />} />
+          <Route path="/voice" element={<VoiceInput />} />
+        </Routes>
       </main>
     </div>
+  )
+}
+
+function Sidebar({ userRole }) {
+  const navigate = useNavigate()
+  const location = window.location.pathname
+
+  const navItems = [
+    { path: '/', label: 'Übersicht', icon: '◎', allowed: ['chef', 'cook', 'manager'] },
+    { path: '/recipes', label: 'Rezepte', icon: '○', allowed: ['chef', 'cook', 'manager'] },
+    { path: '/ingredients', label: 'Zutaten', icon: '□', allowed: ['chef', 'manager'] },
+    { path: '/invoices', label: 'Rechnungen', icon: '△', allowed: ['chef', 'manager'] },
+    { path: '/voice', label: 'Sprache', icon: '♪', allowed: ['chef', 'cook'] },
+  ].filter(item => item.allowed.includes(userRole))
+
+  return (
+    <nav className="sidebar">
+      <div className="logo">
+        <span className="logo-icon">◎</span>
+        <span className="logo-text">Recipe<span className="accent">Base</span></span>
+      </div>
+      
+      <div className="nav-sections">
+        {navItems.map(item => (
+          <button
+            key={item.path}
+            className={`nav-item ${location === item.path ? 'active' : ''}`}
+            onClick={() => navigate(item.path)}
+          >
+            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-label">{item.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="user-footer">
+        <div className="user-info">
+          <span className="user-role">
+            {userRole === 'chef' ? 'Küchenchef' : userRole === 'cook' ? 'Koch' : 'Manager'}
+          </span>
+        </div>
+        <button className="logout-btn" onClick={() => supabase.auth.signOut()}>
+          Abmelden
+        </button>
+      </div>
+    </nav>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   )
 }
 

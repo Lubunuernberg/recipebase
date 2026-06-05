@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import RecipeForm from './RecipeForm'
-import RecipeDetail from './RecipeDetail'
 
-export default function Recipes({ user }) {
+export default function Recipes({ userRole }) {
+  const navigate = useNavigate()
   const [recipes, setRecipes] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [editingRecipe, setEditingRecipe] = useState(null)
-  const [detailRecipe, setDetailRecipe] = useState(null)
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     loadRecipes()
@@ -16,217 +15,103 @@ export default function Recipes({ user }) {
 
   const loadRecipes = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('recipes')
-      .select('*')
-      .order('name')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: member } = await supabase
+        .from('team_members')
+        .select('restaurant_id')
+        .eq('id', user.id)
+        .single()
 
-    if (!error) setRecipes(data || [])
-    setLoading(false)
+      const { data, error } = await supabase
+        .from('recipes')
+        .select('*')
+        .eq('restaurant_id', member.restaurant_id)
+        .order('updated_at', { ascending: false })
+
+      if (error) throw error
+      setRecipes(data || [])
+    } catch (err) {
+      console.error('Error loading recipes:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm('Rezept wirklich löschen?')) return
-    
-    const { error } = await supabase
-      .from('recipes')
-      .delete()
-      .eq('id', id)
+  const filteredRecipes = recipes.filter(r => 
+    r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.original_name && r.original_name.toLowerCase().includes(searchTerm.toLowerCase()))
+  )
 
-    if (!error) loadRecipes()
-  }
-
-  const handleEdit = (recipe) => {
-    setEditingRecipe(recipe)
-    setShowForm(true)
-  }
-
-  const handleNew = () => {
-    setEditingRecipe(null)
-    setShowForm(true)
-  }
-
-  const handleSave = () => {
-    setShowForm(false)
-    setEditingRecipe(null)
-    loadRecipes()
-  }
-
-  const handleView = (recipe) => {
-    setDetailRecipe(recipe)
-  }
-
-  if (loading) return <div style={styles.loading}>Laden...</div>
+  if (loading) return <div className="loading">Rezepte werden geladen...</div>
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Rezepte</h1>
-        <button onClick={handleNew} style={styles.addBtn}>
-          + Neues Rezept
-        </button>
+    <div className="recipes-page">
+      <header className="page-header">
+        <div>
+          <span className="eyebrow">REZEPTE</span>
+          <h1>Alle <span className="accent">Rezepte</span></h1>
+        </div>
+        {userRole === 'chef' && (
+          <button className="btn-primary" onClick={() => setShowForm(true)}>
+            + Neues Rezept
+          </button>
+        )}
+      </header>
+
+      <div className="search-bar">
+        <input
+          type="text"
+          placeholder="Rezepte suchen..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
       </div>
 
-      {showForm && (
-        <RecipeForm
-          recipe={editingRecipe}
-          onSave={handleSave}
-          onCancel={() => {
-            setShowForm(false)
-            setEditingRecipe(null)
-          }}
-        />
-      )}
-
-      {detailRecipe && (
-        <RecipeDetail
-          recipe={detailRecipe}
-          onClose={() => setDetailRecipe(null)}
-          onUpdate={loadRecipes}
-        />
-      )}
-
-      <div style={styles.grid}>
-        {recipes.map(recipe => (
-          <div key={recipe.id} style={styles.card}>
-            <div style={styles.cardHeader}>
-              <h3 style={styles.cardTitle}>{recipe.name}</h3>
-              <div style={styles.actions}>
-                <button 
-                  onClick={() => handleView(recipe)} 
-                  style={styles.actionBtn}
-                  title="Anzeigen"
-                >
-                  👁️
-                </button>
-                <button 
-                  onClick={() => handleEdit(recipe)} 
-                  style={styles.actionBtn}
-                  title="Bearbeiten"
-                >
-                  ✏️
-                </button>
-                <button 
-                  onClick={() => handleDelete(recipe.id)} 
-                  style={{...styles.actionBtn, color: 'var(--color-danger)'}}
-                  title="Löschen"
-                >
-                  🗑️
-                </button>
+      {filteredRecipes.length === 0 ? (
+        <div className="empty-state">
+          <p>Noch keine Rezepte vorhanden.</p>
+          {userRole === 'chef' && (
+            <button className="btn-secondary" onClick={() => setShowForm(true)}>
+              Erstes Rezept anlegen
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="recipes-grid">
+          {filteredRecipes.map(recipe => (
+            <div 
+              key={recipe.id} 
+              className="recipe-card"
+              onClick={() => navigate(`/recipe/${recipe.id}`)}
+            >
+              <div className="recipe-image">
+                {recipe.image_url ? (
+                  <img src={recipe.image_url} alt={recipe.name} />
+                ) : (
+                  <div className="image-placeholder">📷</div>
+                )}
+              </div>
+              <div className="recipe-content">
+                <h3>{recipe.name}</h3>
+                {recipe.original_name && (
+                  <span className="original-name">{recipe.original_name}</span>
+                )}
+                <div className="recipe-meta">
+                  <span>{recipe.category || 'Hauptgericht'}</span>
+                  <span>•</span>
+                  <span>{recipe.portions} Portionen</span>
+                </div>
+                {userRole === 'chef' && recipe.selling_price > 0 && (
+                  <div className="recipe-price">
+                    {recipe.selling_price.toFixed(2)} €
+                  </div>
+                )}
               </div>
             </div>
-            
-            <p style={styles.category}>{recipe.category}</p>
-            <p style={styles.description}>{recipe.description}</p>
-            
-            <div style={styles.meta}>
-              <span>⏱️ {recipe.prep_time} min</span>
-              <span>💰 {recipe.sell_price}€</span>
-              <span>👥 {recipe.portions} Port.</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {recipes.length === 0 && (
-        <div style={styles.empty}>
-          <p>Noch keine Rezepte vorhanden.</p>
-          <button onClick={handleNew} style={styles.emptyBtn}>
-            Erstes Rezept anlegen
-          </button>
+          ))}
         </div>
       )}
     </div>
   )
-}
-
-const styles = {
-  container: { maxWidth: '1200px' },
-  loading: { padding: '2rem', textAlign: 'center' },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1.5rem',
-  },
-  title: { fontSize: '1.5rem', fontWeight: 700 },
-  addBtn: {
-    background: 'var(--color-accent)',
-    color: 'white',
-    padding: '0.75rem 1.25rem',
-    borderRadius: 'var(--radius-md)',
-    border: 'none',
-    fontSize: '0.875rem',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-    gap: '1rem',
-  },
-  card: {
-    background: 'var(--color-bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '1.25rem',
-    border: '1px solid var(--color-border)',
-    cursor: 'pointer',
-    transition: 'transform 0.2s, box-shadow 0.2s',
-  },
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '0.5rem',
-  },
-  cardTitle: { 
-    fontSize: '1.125rem', 
-    fontWeight: 600,
-    flex: 1,
-  },
-  actions: {
-    display: 'flex',
-    gap: '0.5rem',
-  },
-  actionBtn: {
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '1rem',
-    padding: '0.25rem',
-  },
-  category: { 
-    color: 'var(--color-accent)', 
-    fontSize: '0.875rem', 
-    marginBottom: '0.5rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  },
-  description: { 
-    color: 'var(--color-text-muted)', 
-    fontSize: '0.875rem', 
-    marginBottom: '1rem',
-    lineHeight: 1.5,
-  },
-  meta: {
-    display: 'flex',
-    gap: '1rem',
-    fontSize: '0.875rem',
-    color: 'var(--color-text-muted)',
-  },
-  empty: { 
-    textAlign: 'center', 
-    padding: '3rem', 
-    color: 'var(--color-text-muted)',
-  },
-  emptyBtn: {
-    marginTop: '1rem',
-    background: 'var(--color-accent)',
-    color: 'white',
-    padding: '0.75rem 1.5rem',
-    borderRadius: 'var(--radius-md)',
-    border: 'none',
-    cursor: 'pointer',
-    fontWeight: 600,
-  },
 }
