@@ -6,8 +6,10 @@ import Navigation from './components/Navigation'
 import Dashboard from './components/Dashboard'
 import Recipes from './components/Recipes'
 import Ingredients from './components/Ingredients'
-
 import Inventory from './components/Inventory'
+import WeeklyMenu from './components/WeeklyMenu'
+import Orders from './components/Orders'
+import HACCP from './components/HACCP'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -48,6 +50,9 @@ function App() {
             <Route path="/recipes" element={<Recipes user={session.user} />} />
             <Route path="/ingredients" element={<Ingredients user={session.user} />} />
             <Route path="/inventory" element={<Inventory user={session.user} />} />
+            <Route path="/menu" element={<WeeklyMenu user={session.user} />} />
+            <Route path="/orders" element={<Orders user={session.user} />} />
+            <Route path="/haccp" element={<HACCP user={session.user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
