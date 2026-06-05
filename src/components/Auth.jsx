@@ -16,11 +16,10 @@ export default function Auth() {
     setError(null)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
-
       if (error) throw error
       setMessage('Login erfolgreich!')
     } catch (err) {
@@ -36,14 +35,11 @@ export default function Auth() {
     setError(null)
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: { name }
-        }
+        options: { data: { name } }
       })
-
       if (error) throw error
       setMessage('Account erstellt! Bitte E-Mail bestätigen.')
     } catch (err) {
@@ -54,127 +50,67 @@ export default function Auth() {
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>RecipeBase</h1>
-        <p style={styles.subtitle}>{isSignUp ? 'Account erstellen' : 'Anmelden'}</p>
+    <div className="auth-container">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <span className="logo-icon">◎</span>
+          <span className="logo-text">Recipe<span className="accent">Base</span></span>
+        </div>
 
-        <form onSubmit={isSignUp ? handleSignUp : handleLogin} style={styles.form}>
+        <span className="eyebrow auth-eyebrow">{isSignUp ? 'NEU' : 'WILLKOMMEN'}</span>
+        <h1 className="auth-title">{isSignUp ? 'Account erstellen' : 'Anmelden'}</h1>
+
+        <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="auth-form">
           {isSignUp && (
-            <input
-              type="text"
-              placeholder="Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              style={styles.input}
-              required
-            />
+            <div className="form-field">
+              <label>Name</label>
+              <input
+                type="text"
+                placeholder="Max Mustermann"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
           )}
           
-          <input
-            type="email"
-            placeholder="E-Mail"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={styles.input}
-            required
-          />
+          <div className="form-field">
+            <label>E-Mail</label>
+            <input
+              type="email"
+              placeholder="name@restaurant.de"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
           
-          <input
-            type="password"
-            placeholder="Passwort"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={styles.input}
-            required
-          />
+          <div className="form-field">
+            <label>Passwort</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
 
-          {error && <p style={styles.error}>{error}</p>}
-          {message && <p style={styles.success}>{message}</p>}
+          {error && <p className="auth-error">{error}</p>}
+          {message && <p className="auth-success">{message}</p>}
 
-          <button type="submit" style={styles.button} disabled={loading}>
+          <button type="submit" className="btn-primary auth-button" disabled={loading}>
             {loading ? 'Laden...' : isSignUp ? 'Account erstellen' : 'Anmelden'}
           </button>
         </form>
 
         <button
           onClick={() => setIsSignUp(!isSignUp)}
-          style={styles.switchButton}
+          className="auth-switch"
         >
-          {isSignUp ? 'Bereits Account? Anmelden' : 'Neuer Account?'}
+          {isSignUp ? 'Bereits Account? Anmelden' : 'Neu hier? Account erstellen'}
         </button>
       </div>
     </div>
   )
-}
-
-const styles = {
-  container: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '1rem',
-  },
-  card: {
-    background: 'var(--color-bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '2rem',
-    width: '100%',
-    maxWidth: '400px',
-    boxShadow: 'var(--shadow-lg)',
-  },
-  title: {
-    fontSize: '1.75rem',
-    fontWeight: 700,
-    textAlign: 'center',
-    marginBottom: '0.5rem',
-    color: 'var(--color-accent)',
-  },
-  subtitle: {
-    textAlign: 'center',
-    color: 'var(--color-text-muted)',
-    marginBottom: '1.5rem',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-  },
-  input: {
-    background: 'var(--color-bg-input)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.875rem 1rem',
-    color: 'var(--color-text)',
-    fontSize: '1rem',
-    transition: 'border-color 0.2s',
-  },
-  button: {
-    background: 'var(--color-accent)',
-    color: 'white',
-    padding: '0.875rem',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '1rem',
-    fontWeight: 600,
-    transition: 'background 0.2s',
-  },
-  switchButton: {
-    background: 'transparent',
-    color: 'var(--color-accent)',
-    padding: '0.75rem',
-    marginTop: '1rem',
-    fontSize: '0.875rem',
-    width: '100%',
-  },
-  error: {
-    color: 'var(--color-danger)',
-    fontSize: '0.875rem',
-    textAlign: 'center',
-  },
-  success: {
-    color: 'var(--color-success)',
-    fontSize: '0.875rem',
-    textAlign: 'center',
-  },
 }
