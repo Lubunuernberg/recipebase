@@ -1,298 +1,188 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function Dashboard({ user }) {
+export default function Dashboard({ userRole, canAccess }) {
   const [stats, setStats] = useState({
     recipes: 0,
     ingredients: 0,
-    lowStock: 0,
-    menuItems: 0,
+    invoices: 0,
+    priceAlerts: 0
   })
-  const [loading, setLoading] = useState(true)
   const [recentActivity, setRecentActivity] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadDashboardData()
+    loadDashboard()
   }, [])
 
-  const loadDashboardData = async () => {
-    setLoading(true)
-    
-    // Get user's restaurant_id
-    const { data: memberData } = await supabase
+  const loadDashboard = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: member } = await supabase
       .from('team_members')
       .select('restaurant_id')
       .eq('id', user.id)
       .single()
 
-    if (!memberData?.restaurant_id) {
-      setLoading(false)
-      return
-    }
+    if (!member) return
 
-    const restaurantId = memberData.restaurant_id
+    const restaurantId = member.restaurant_id
 
-    // Load stats
+    // Parallel laden
     const [
-      { count: recipeCount },
-      { count: ingredientCount },
-      { data: lowStockItems },
-      { count: menuCount },
+      { count: recipes },
+      { count: ingredients },
+      { count: invoices },
+      { data: recent }
     ] = await Promise.all([
-      supabase.from('recipes').select('*', { count: 'exact' }).eq('restaurant_id', restaurantId),
-      supabase.from('ingredients').select('*', { count: 'exact' }).eq('restaurant_id', restaurantId),
-      supabase.from('ingredients')
-        .select('*')
+      supabase.from('recipes').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
+      supabase.from('ingredients').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
+      supabase.from('invoices').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
+      supabase.from('recipes')
+        .select('id, name, updated_at, image_url')
         .eq('restaurant_id', restaurantId)
-        .lte('current_stock', 'min_stock'),
-      supabase.from('weekly_menu').select('*', { count: 'exact' }).eq('restaurant_id', restaurantId),
+        .order('updated_at', { ascending: false })
+        .limit(5)
     ])
 
     setStats({
-      recipes: recipeCount || 0,
-      ingredients: ingredientCount || 0,
-      lowStock: lowStockItems?.length || 0,
-      menuItems: menuCount || 0,
+      recipes: recipes || 0,
+      ingredients: ingredients || 0,
+      invoices: invoices || 0,
+      priceAlerts: 0 // TODO: Preisänderungen zählen
     })
-
-    // Mock recent activity for now
-    setRecentActivity([
-      { id: 1, action: 'Rezept erstellt', item: 'Pho Bo', time: '2 Stunden ago', type: 'recipe' },
-      { id: 2, action: 'Zutat aktualisiert', item: 'Rindfleisch', time: '4 Stunden ago', type: 'ingredient' },
-      { id: 3, action: 'Bestellung gesendet', item: 'Metzgerei Schmidt', time: 'Gestern', type: 'order' },
-    ])
-
+    setRecentActivity(recent || [])
     setLoading(false)
   }
 
-  if (loading) {
-    return (
-      <div style={styles.loading}>
-        <div style={styles.spinner} />
+  if (loading) return <div className="loading">Laden...</div>
+
+  return (
+    <div className="dashboard">
+      <header className="page-header">
+        <span className="eyebrow">ÜBERSICHT</span>
+        <h1>Willkommen <span className="accent">zurück</span></h1>
+      </header>
+
+      <div className="stats-grid">
+        <StatCard 
+          number={stats.recipes} 
+          label="Rezepte" 
+          trend="im System"
+          color="cognac"
+        />
+        <StatCard 
+          number={stats.ingredients} 
+          label="Zutaten" 
+          trend="verwaltet"
+          color="green"
+        />
+        <StatCard 
+          number={stats.invoices} 
+          label="Rechnungen" 
+          trend="analysiert"
+          color="blue"
+        />
+        <StatCard 
+          number={stats.priceAlerts} 
+          label="Preisänderungen" 
+          trend="diesen Monat"
+          color={stats.priceAlerts > 0 ? 'red' : 'muted'}
+        />
       </div>
-    )
+
+      <div className="dashboard-grid">
+        <section className="card">
+          <header className="card-header">
+            <span className="eyebrow-small">AKTUELL</span>
+            <h3>Zuletzt bearbeitet</h3>
+          </header>
+          
+          <div className="activity-list">
+            {recentActivity.length === 0 ? (
+              <p className="empty">Noch keine Rezepte vorhanden</p>
+            ) : (
+              recentActivity.map(item => (
+                <div key={item.id} className="activity-item">
+                  <div className="activity-image" 
+                    style={{ 
+                      backgroundImage: item.image_url ? `url(${item.image_url})` : 'none',
+                      backgroundColor: '#f0ebe3'
+                    }}
+                  />
+                  <div className="activity-content">
+                    <span className="activity-name">{item.name}</span>
+                    <span className="activity-time">
+                      {new Date(item.updated_at).toLocaleDateString('de-DE', { 
+                        day: 'numeric', 
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="card">
+          <header className="card-header">
+            <span className="eyebrow-small">SCHNELLZUGRIFF</span>
+            <h3>Aktionen</h3>
+          </header>
+          
+          <div className="quick-actions">
+            <QuickAction 
+              label="Rezept anlegen" 
+              icon="+"
+              onClick={() => {}}
+            />
+            <QuickAction 
+              label="Rechnung scannen" 
+              icon="📷"
+              onClick={() => {}}
+            />
+            <QuickAction 
+              label="Spracheingabe" 
+              icon="🎤"
+              onClick={() => {}}
+            />
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+// Helper Components
+function StatCard({ number, label, trend, color }) {
+  const colorClasses = {
+    cognac: { number: '#8b5a2b', border: '#8b5a2b' },
+    green: { number: '#5d7a4f', border: '#5d7a4f' },
+    blue: { number: '#4a6b7c', border: '#4a6b7c' },
+    red: { number: '#a04437', border: '#a04437' },
+    muted: { number: '#6b6258', border: '#d4c8b3' }
   }
-
+  
+  const colors = colorClasses[color] || colorClasses.muted
+  
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>Dashboard</h1>
-      <p style={styles.welcome}>Willkommen zurück, {user.email}</p>
-
-      {/* Stats Grid */}
-      <div style={styles.statsGrid}>
-        <StatCard
-          icon="🍳"
-          label="Rezepte"
-          value={stats.recipes}
-          color="var(--color-accent)"
-        />
-        <StatCard
-          icon="🥬"
-          label="Zutaten"
-          value={stats.ingredients}
-          color="var(--color-success)"
-        />
-        <StatCard
-          icon="⚠️"
-          label="Niedriger Bestand"
-          value={stats.lowStock}
-          color={stats.lowStock > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)'}
-        />
-        <StatCard
-          icon="📅"
-          label="Menüeinträge"
-          value={stats.menuItems}
-          color="var(--color-warning)"
-        />
-      </div>
-
-      {/* Quick Actions */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>Schnellzugriff</h2>
-        <div style={styles.quickActions}>
-          <QuickActionButton icon="➕" label="Neues Rezept" />
-          <QuickActionButton icon="📝" label="Inventur" />
-          <QuickActionButton icon="🛒" label="Bestellung" />
-          <QuickActionButton icon="🌡️" label="HACCP" />
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>Letzte Aktivität</h2>
-        <div style={styles.activityList}>
-          {recentActivity.map(activity => (
-            <div key={activity.id} style={styles.activityItem}>
-              <div style={styles.activityIcon}>
-                {activity.type === 'recipe' && '🍳'}
-                {activity.type === 'ingredient' && '🥬'}
-                {activity.type === 'order' && '🛒'}
-              </div>
-              <div style={styles.activityContent}>
-                <p style={styles.activityAction}>{activity.action}</p>
-                <p style={styles.activityItem}>{activity.item}</p>
-              </div>
-              <span style={styles.activityTime}>{activity.time}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+    <div className="stat-card" style={{ borderLeft: `3px solid ${colors.border}` }}>
+      <span className="stat-number" style={{ color: colors.number }}>
+        {number}
+      </span>
+      <span className="stat-label">{label}</span>
+      <span className="stat-trend">{trend}</span>
     </div>
   )
 }
 
-function StatCard({ icon, label, value, color }) {
+function QuickAction({ label, icon, onClick }) {
   return (
-    <div style={styles.statCard}>
-      <div style={{ ...styles.statIcon, background: color + '20', color }}>
-        {icon}
-      </div>
-      <div>
-        <p style={styles.statLabel}>{label}</p>
-        <p style={{ ...styles.statValue, color }}>{value}</p>
-      </div>
-    </div>
-  )
-}
-
-function QuickActionButton({ icon, label }) {
-  return (
-    <button style={styles.quickActionBtn}>
-      <span style={styles.quickActionIcon}>{icon}</span>
-      <span style={styles.quickActionLabel}>{label}</span>
+    <button className="quick-action" onClick={onClick}>
+      <span className="quick-icon">{icon}</span>
+      <span className="quick-label">{label}</span>
     </button>
   )
-}
-
-const styles = {
-  container: {
-    maxWidth: '1200px',
-  },
-  loading: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '400px',
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '3px solid var(--color-bg-input)',
-    borderTop: '3px solid var(--color-accent)',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-  },
-  title: {
-    fontSize: '1.75rem',
-    fontWeight: 700,
-    marginBottom: '0.25rem',
-  },
-  welcome: {
-    color: 'var(--color-text-muted)',
-    marginBottom: '2rem',
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-    gap: '1rem',
-    marginBottom: '2rem',
-  },
-  statCard: {
-    background: 'var(--color-bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '1.25rem',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-    border: '1px solid var(--color-border)',
-  },
-  statIcon: {
-    width: '48px',
-    height: '48px',
-    borderRadius: 'var(--radius-md)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '1.5rem',
-  },
-  statLabel: {
-    color: 'var(--color-text-muted)',
-    fontSize: '0.875rem',
-    marginBottom: '0.25rem',
-  },
-  statValue: {
-    fontSize: '1.75rem',
-    fontWeight: 700,
-  },
-  section: {
-    marginBottom: '2rem',
-  },
-  sectionTitle: {
-    fontSize: '1.125rem',
-    fontWeight: 600,
-    marginBottom: '1rem',
-  },
-  quickActions: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-    gap: '1rem',
-  },
-  quickActionBtn: {
-    background: 'var(--color-bg-card)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '1.25rem',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '0.5rem',
-    color: 'var(--color-text)',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  quickActionIcon: {
-    fontSize: '1.5rem',
-  },
-  quickActionLabel: {
-    fontSize: '0.875rem',
-    fontWeight: 500,
-  },
-  activityList: {
-    background: 'var(--color-bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--color-border)',
-    overflow: 'hidden',
-  },
-  activityItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-    padding: '1rem 1.25rem',
-    borderBottom: '1px solid var(--color-border)',
-  },
-  activityIcon: {
-    width: '40px',
-    height: '40px',
-    background: 'var(--color-bg-input)',
-    borderRadius: 'var(--radius-md)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '1.25rem',
-  },
-  activityContent: {
-    flex: 1,
-  },
-  activityAction: {
-    fontWeight: 500,
-    marginBottom: '0.125rem',
-  },
-  activityItem: {
-    color: 'var(--color-text-muted)',
-    fontSize: '0.875rem',
-  },
-  activityTime: {
-    color: 'var(--color-text-muted)',
-    fontSize: '0.75rem',
-  },
 }
