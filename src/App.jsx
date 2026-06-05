@@ -7,6 +7,8 @@ import Dashboard from './components/Dashboard'
 import Recipes from './components/Recipes'
 import Ingredients from './components/Ingredients'
 
+import Inventory from './components/Inventory'
+
 function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -45,6 +47,7 @@ function App() {
             <Route path="/" element={<Dashboard user={session.user} />} />
             <Route path="/recipes" element={<Recipes user={session.user} />} />
             <Route path="/ingredients" element={<Ingredients user={session.user} />} />
+            <Route path="/inventory" element={<Inventory user={session.user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

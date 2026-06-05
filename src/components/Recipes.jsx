@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import RecipeForm from './RecipeForm'
+import RecipeDetail from './RecipeDetail'
 
 export default function Recipes({ user }) {
   const [recipes, setRecipes] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingRecipe, setEditingRecipe] = useState(null)
+  const [detailRecipe, setDetailRecipe] = useState(null)
 
   useEffect(() => {
     loadRecipes()
@@ -50,6 +52,10 @@ export default function Recipes({ user }) {
     loadRecipes()
   }
 
+  const handleView = (recipe) => {
+    setDetailRecipe(recipe)
+  }
+
   if (loading) return <div style={styles.loading}>Laden...</div>
 
   return (
@@ -72,12 +78,27 @@ export default function Recipes({ user }) {
         />
       )}
 
+      {detailRecipe && (
+        <RecipeDetail
+          recipe={detailRecipe}
+          onClose={() => setDetailRecipe(null)}
+          onUpdate={loadRecipes}
+        />
+      )}
+
       <div style={styles.grid}>
         {recipes.map(recipe => (
           <div key={recipe.id} style={styles.card}>
             <div style={styles.cardHeader}>
               <h3 style={styles.cardTitle}>{recipe.name}</h3>
               <div style={styles.actions}>
+                <button 
+                  onClick={() => handleView(recipe)} 
+                  style={styles.actionBtn}
+                  title="Anzeigen"
+                >
+                  👁️
+                </button>
                 <button 
                   onClick={() => handleEdit(recipe)} 
                   style={styles.actionBtn}
@@ -103,22 +124,6 @@ export default function Recipes({ user }) {
               <span>💰 {recipe.sell_price}€</span>
               <span>👥 {recipe.portions} Port.</span>
             </div>
-
-            {recipe.instructions && recipe.instructions.length > 0 && (
-              <div style={styles.instructions}>
-                <p style={styles.instructionsTitle}>Zubereitung:</p>
-                <ol style={styles.instructionsList}>
-                  {recipe.instructions.slice(0, 3).map((step, i) => (
-                    <li key={i}>{step}</li>
-                  ))}
-                  {recipe.instructions.length > 3 && (
-                    <li style={{color: 'var(--color-text-muted)'}}>
-                      ... {recipe.instructions.length - 3} weitere Schritte
-                    </li>
-                  )}
-                </ol>
-              </div>
-            )}
           </div>
         ))}
       </div>
@@ -165,6 +170,8 @@ const styles = {
     borderRadius: 'var(--radius-lg)',
     padding: '1.25rem',
     border: '1px solid var(--color-border)',
+    cursor: 'pointer',
+    transition: 'transform 0.2s, box-shadow 0.2s',
   },
   cardHeader: {
     display: 'flex',
@@ -206,24 +213,6 @@ const styles = {
     gap: '1rem',
     fontSize: '0.875rem',
     color: 'var(--color-text-muted)',
-    marginBottom: '1rem',
-  },
-  instructions: {
-    borderTop: '1px solid var(--color-border)',
-    paddingTop: '1rem',
-  },
-  instructionsTitle: {
-    fontSize: '0.75rem',
-    fontWeight: 600,
-    color: 'var(--color-text-muted)',
-    marginBottom: '0.5rem',
-    textTransform: 'uppercase',
-  },
-  instructionsList: {
-    fontSize: '0.875rem',
-    color: 'var(--color-text)',
-    paddingLeft: '1.25rem',
-    lineHeight: 1.6,
   },
   empty: { 
     textAlign: 'center', 
