@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 
-// Supported languages with their Whisper codes
 const LANGUAGES = [
   { code: 'vi', name: 'Vietnamesisch', flag: '🇻🇳' },
   { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
@@ -11,7 +10,10 @@ const LANGUAGES = [
   { code: 'th', name: 'Thai', flag: '🇹🇭' },
 ]
 
-export default function VoiceInput({ onRecipeCreated, onClose }) {
+// Demo-Modus - wenn true, werden Mock-Daten verwendet
+const DEMO_MODE = true
+
+export default function VoiceInput({ onRecipeCreated }) {
   const [isRecording, setIsRecording] = useState(false)
   const [selectedLang, setSelectedLang] = useState('vi')
   const [transcript, setTranscript] = useState('')
@@ -40,12 +42,11 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
         }
       })
       
-      // Use webm format for better browser support
-      mediaRecorder.current = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm') 
-          ? 'audio/webm' 
-          : 'audio/mp4'
-      })
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
+        ? 'audio/webm' 
+        : 'audio/mp4'
+      
+      mediaRecorder.current = new MediaRecorder(stream, { mimeType })
       
       mediaRecorder.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -54,17 +55,15 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
       }
       
       mediaRecorder.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' })
+        const audioBlob = new Blob(audioChunks.current, { type: mimeType })
         await processAudio(audioBlob)
-        
-        // Stop all tracks
         stream.getTracks().forEach(track => track.stop())
       }
       
-      mediaRecorder.current.start(100) // Collect data every 100ms
+      mediaRecorder.current.start(100)
       setIsRecording(true)
       
-      // Start timer
+      // Timer starten
       setRecordingTime(0)
       recordingInterval.current = setInterval(() => {
         setRecordingTime(t => t + 1)
@@ -91,24 +90,63 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
     setIsProcessing(true)
     
     try {
-      // Convert to base64
-      const base64Audio = await blobToBase64(audioBlob)
-      
-      // Send to Supabase Edge Function
-      const { data, error: funcError } = await supabase.functions.invoke('whisper-transcribe', {
-        body: { 
-          audio: base64Audio,
-          language: selectedLang
-        }
-      })
-      
-      if (funcError) throw funcError
-      
-      setTranscript(data.text)
-      
-      // Structure the recipe with Claude
-      if (data.text) {
-        await structureRecipe(data.text, selectedLang)
+      if (DEMO_MODE) {
+        // Demo-Modus: Simulierte Verzögerung
+        await new Promise(r => setTimeout(r, 2000))
+        
+        const demoText = selectedLang === 'vi' 
+          ? 'Phở bò, nấu với 500g bánh phở, 300g thịt bò, 2 lít nước dùng, hành, ngò, giá đỗ'
+          : selectedLang === 'de'
+          ? 'Pho Bo, Reisnudelsuppe mit Rindfleisch, 500g Reisnudeln, 300g Rindfleisch, 2 Liter Brühe, Zwiebeln, Koriander, Sprossen'
+          : 'Pho Bo, beef noodle soup, 500g rice noodles, 300g beef, 2 liters broth, onions, cilantro, bean sprouts'
+        
+        setTranscript(demoText)
+        
+        // Demo-Strukturierung
+        await new Promise(r => setTimeout(r, 1500))
+        setStructuredRecipe({
+          name: 'Phở Bò',
+          original_name: 'phở bò',
+          category: 'Hauptgericht',
+          portions: 4,
+          description: 'Traditionelle vietnamesische Reisnudelsuppe mit Rindfleisch',
+          ingredients: [
+            { name: 'Bánh phở', original_name: 'bánh phở', amount: 500, unit: 'g' },
+            { name: 'Rindfleisch', original_name: 'thịt bò', amount: 300, unit: 'g' },
+            { name: 'Rinderbrühe', original_name: 'nước dùng', amount: 2, unit: 'L' },
+            { name: 'Zwiebeln', original_name: 'hành', amount: 3, unit: 'Stk' },
+            { name: 'Koriander', original_name: 'ngò', amount: 1, unit: 'Bund' },
+            { name: 'Sojasprossen', original_name: 'giá đỗ', amount: 200, unit: 'g' }
+          ],
+          steps: [
+            'Brühe vorbereiten und aufkochen',
+            'Nudeln nach Packungsanweisung kochen',
+            'Rindfleisch in dünne Scheiben schneiden',
+            'Zutaten in Schüsseln anrichten',
+            'Mit heißer Brühe übergießen und servieren'
+          ]
+        })
+        
+      } else {
+        // Produktiv-Modus mit Supabase Edge Functions
+        const base64Audio = await blobToBase64(audioBlob)
+        
+        const { data: transcribeData, error: transcribeError } = await supabase.functions.invoke('whisper-transcribe', {
+          body: { audio: base64Audio, language: selectedLang }
+        })
+        
+        if (transcribeError) throw transcribeError
+        
+        setTranscript(transcribeData.text)
+        
+        // Strukturierung
+        const { data: structureData, error: structureError } = await supabase.functions.invoke('structure-recipe', {
+          body: { text: transcribeData.text, language: selectedLang }
+        })
+        
+        if (structureError) throw structureError
+        
+        setStructuredRecipe(structureData)
       }
       
     } catch (err) {
@@ -116,24 +154,6 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
       setError('Fehler bei der Verarbeitung: ' + err.message)
     } finally {
       setIsProcessing(false)
-    }
-  }
-
-  const structureRecipe = async (text, lang) => {
-    try {
-      const { data, error: funcError } = await supabase.functions.invoke('structure-recipe', {
-        body: { 
-          text,
-          language: lang
-        }
-      })
-      
-      if (funcError) throw funcError
-      
-      setStructuredRecipe(data)
-    } catch (err) {
-      console.error('Structure error:', err)
-      // Don't show error - user can still use raw transcript
     }
   }
 
@@ -160,7 +180,7 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
         .eq('id', user.id)
         .single()
       
-      // Insert recipe
+      // Rezept speichern
       const { data: recipe, error: recipeError } = await supabase
         .from('recipes')
         .insert({
@@ -177,48 +197,47 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
       
       if (recipeError) throw recipeError
       
-      // Insert ingredients
-      if (structuredRecipe.ingredients?.length > 0) {
-        for (const ing of structuredRecipe.ingredients) {
-          // Try to find existing ingredient
-          const { data: existing } = await supabase
+      // Zutaten verknüpfen
+      for (const ing of structuredRecipe.ingredients) {
+        // Existierende Zutat suchen oder neue erstellen
+        const { data: existing } = await supabase
+          .from('ingredients')
+          .select('id')
+          .eq('restaurant_id', member.restaurant_id)
+          .ilike('name', ing.name)
+          .maybeSingle()
+        
+        let ingredientId = existing?.id
+        
+        if (!ingredientId) {
+          const { data: newIng } = await supabase
             .from('ingredients')
-            .select('id')
-            .eq('restaurant_id', member.restaurant_id)
-            .ilike('name', ing.name)
-            .maybeSingle()
-          
-          let ingredientId = existing?.id
-          
-          // Create if not found
-          if (!ingredientId) {
-            const { data: newIng, error: ingError } = await supabase
-              .from('ingredients')
-              .insert({
-                restaurant_id: member.restaurant_id,
-                name: ing.name,
-                original_name: ing.original_name,
-                unit: ing.unit || 'g',
-                current_price: 0
-              })
-              .select()
-              .single()
-            
-            if (!ingError) {
-              ingredientId = newIng.id
-            }
-          }
-          
-          // Link to recipe
-          if (ingredientId) {
-            await supabase.from('recipe_ingredients').insert({
-              recipe_id: recipe.id,
-              ingredient_id: ingredientId,
-              amount: ing.amount
+            .insert({
+              restaurant_id: member.restaurant_id,
+              name: ing.name,
+              original_name: ing.original_name,
+              unit: ing.unit || 'g',
+              current_price: 0
             })
-          }
+            .select()
+            .single()
+          
+          ingredientId = newIng?.id
+        }
+        
+        if (ingredientId) {
+          await supabase.from('recipe_ingredients').insert({
+            recipe_id: recipe.id,
+            ingredient_id: ingredientId,
+            amount: ing.amount
+          })
         }
       }
+      
+      // Erfolg anzeigen und zurücksetzen
+      setTranscript('')
+      setStructuredRecipe(null)
+      alert('Rezept erfolgreich gespeichert!')
       
       if (onRecipeCreated) {
         onRecipeCreated(recipe)
@@ -242,10 +261,11 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
         <h1>Rezept <span className="accent">einsprechen</span></h1>
         <p className="subtitle">
           Sprich dein Rezept ein. Die KI erkennt automatisch Zutaten, Mengen und Zubereitungsschritte.
+          {DEMO_MODE && <span style={{ color: '#B8843E', display: 'block', marginTop: '0.5rem' }}>🎮 Demo-Modus aktiv</span>}
         </p>
       </header>
 
-      {/* Language Selector */}
+      {/* Sprach-Auswahl */}
       <div className="language-selector">
         <span className="selector-label">Sprache:</span>
         <div className="language-buttons">
@@ -263,13 +283,10 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
         </div>
       </div>
 
-      {/* Recording Area */}
+      {/* Aufnahme-Bereich */}
       <div className={`recording-area ${isRecording ? 'recording' : ''}`}>
         {!isRecording && !isProcessing && !transcript && (
-          <button 
-            className="record-btn"
-            onClick={startRecording}
-          >
+          <button className="record-btn" onClick={startRecording}>
             <div className="record-circle">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -284,10 +301,7 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
         )}
 
         {isRecording && (
-          <button 
-            className="record-btn recording"
-            onClick={stopRecording}
-          >
+          <button className="record-btn recording" onClick={stopRecording}>
             <div className="record-circle active">
               <div className="recording-indicator">
                 <span className="pulse"></span>
@@ -307,14 +321,11 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
         )}
       </div>
 
-      {error && (
-        <div className="error-message">{error}</div>
-      )}
+      {error && <div className="error-message">{error}</div>}
 
-      {/* Results */}
+      {/* Ergebnisse */}
       {(transcript || structuredRecipe) && (
         <div className="results-container">
-          {/* Raw Transcript */}
           {transcript && (
             <div className="result-card">
               <header>
@@ -325,7 +336,6 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
             </div>
           )}
 
-          {/* Structured Recipe */}
           {structuredRecipe && (
             <div className="result-card structured">
               <header>
@@ -374,7 +384,8 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
               <div className="result-actions">
                 <button className="btn-primary" onClick={saveRecipe}>
                   ✓ Rezept speichern
-                </button>                <button className="btn-secondary" onClick={() => {
+                </button>
+                <button className="btn-secondary" onClick={() => {
                   setTranscript('')
                   setStructuredRecipe(null)
                 }}>
@@ -389,7 +400,7 @@ export default function VoiceInput({ onRecipeCreated, onClose }) {
       <div className="voice-tips">
         <h4>Tipps für beste Ergebnisse:</h4>
         <ul>
-          <li>Spreiche langsam und deutlich</li>
+          <li>Sprich langsam und deutlich</li>
           <li>Nenne Mengen einzeln: "500 Gramm Rindfleisch"</li>
           <li>Originalnamen werden automatisch erkannt</li>
           <li>Stille Umgebung für bessere Erkennung</li>
