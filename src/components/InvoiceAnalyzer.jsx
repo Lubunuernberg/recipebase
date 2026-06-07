@@ -43,37 +43,40 @@ export default function InvoiceAnalyzer() {
   }
 
   const analyzeInvoice = async (imageUrl, fileName) => {
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: member } = await supabase
-      .from('team_members')
-      .select('restaurant_id')
-      .eq('id', user.id)
-      .single()
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: member } = await supabase
+        .from('team_members')
+        .select('restaurant_id')
+        .eq('id', user.id)
+        .single()
 
-    // Call Supabase Edge Function for AI analysis
-    const { data, error } = await supabase.functions.invoke('analyze-invoice', {
-      body: { imageUrl }
-    })
+      // Call Supabase Edge Function
+      const { data, error } = await supabase.functions.invoke('analyze-invoice', {
+        body: { imageUrl }
+      })
 
-    if (error) throw error
+      if (error) throw error
 
-    // Save to database
-    await supabase.from('invoices').insert({
-      restaurant_id: member.restaurant_id,
-      file_name: fileName,
-      image_url: imageUrl,
-      supplier: data.supplier,
-      total_amount: data.total,
-      date: data.date,
-      items: data.items,
-      status: 'analyzed'
-    })
+      // Save to database
+      await supabase.from('invoices').insert({
+        restaurant_id: member.restaurant_id,
+        file_name: fileName,
+        image_url: imageUrl,
+        supplier: data.supplier,
+        total_amount: data.total,
+        date: data.date,
+        items: data.items,
+        status: 'analyzed'
+      })
 
-    // Check for price changes
-    await checkPriceChanges(data.items, member.restaurant_id)
+      // Check for price changes
+      await checkPriceChanges(data.items, member.restaurant_id)
 
-    setResult(data)
+      setResult(data)
+    } catch (err) {
+      setError('Analyse fehlgeschlagen: ' + err.message)
+    }
   }
 
   const checkPriceChanges = async (items, restaurantId) => {
@@ -86,7 +89,6 @@ export default function InvoiceAnalyzer() {
         .single()
 
       if (existing && Math.abs(existing.current_price - item.price) > 0.01) {
-        // Price changed - create alert
         await supabase.from('price_alerts').insert({
           restaurant_id: restaurantId,
           ingredient_name: item.name,

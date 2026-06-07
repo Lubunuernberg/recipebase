@@ -17,11 +17,24 @@ export default function Recipes({ userRole }) {
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        setRecipes([])
+        setLoading(false)
+        return
+      }
+
       const { data: member } = await supabase
         .from('team_members')
         .select('restaurant_id')
         .eq('id', user.id)
         .single()
+
+      if (!member?.restaurant_id) {
+        setRecipes([])
+        setLoading(false)
+        return
+      }
 
       const { data, error } = await supabase
         .from('recipes')
@@ -33,17 +46,35 @@ export default function Recipes({ userRole }) {
       setRecipes(data || [])
     } catch (err) {
       console.error('Error loading recipes:', err)
+      setRecipes([])
     } finally {
       setLoading(false)
     }
   }
 
   const filteredRecipes = recipes.filter(r => 
-    r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    r.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.original_name && r.original_name.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
-  if (loading) return <div className="loading">Rezepte werden geladen...</div>
+  if (loading) {
+    return (
+      <div className="recipes-page" style={{ padding: '2rem' }}>
+        <div style={{ textAlign: 'center', padding: '3rem' }}>
+          <div className="spinner" style={{ 
+            width: '40px', 
+            height: '40px', 
+            border: '3px solid var(--cream-dark)',
+            borderTop: '3px solid var(--cognac)',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 1rem'
+          }} />
+          <p style={{ color: 'var(--text-muted)' }}>Rezepte werden geladen...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="recipes-page">
