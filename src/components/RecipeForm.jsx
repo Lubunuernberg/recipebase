@@ -1,340 +1,355 @@
 import { useState, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
-export default function RecipeForm({ recipe, onSave, onCancel }) {
+export default function RecipeForm({ onClose, onSaved }) {
+  const navigate = useNavigate()
+  const [loading, setLoading] = useState(false)
+  const [ingredients, setIngredients] = useState([])
+  const [recipeIngredients, setRecipeIngredients] = useState([])
+  
   const [formData, setFormData] = useState({
     name: '',
+    original_name: '',
     category: 'Hauptgericht',
+    portions: 4,
     description: '',
-    prep_time: 30,
-    sell_price: 0,
-    portions: 1,
-    instructions: [''],
-    ...recipe
+    selling_price: '',
+    steps: [''],
+    image_url: ''
   })
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
 
-  const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'sell_price' || name === 'prep_time' || name === 'portions' 
-        ? parseFloat(value) || 0 
-        : value
-    }))
-  }
+  useEffect(() => {
+    loadIngredients()
+  }, [])
 
-  const handleInstructionChange = (index, value) => {
-    const newInstructions = [...formData.instructions]
-    newInstructions[index] = value
-    setFormData(prev => ({ ...prev, instructions: newInstructions }))
-  }
-
-  const addInstruction = () => {
-    setFormData(prev => ({
-      ...prev,
-      instructions: [...prev.instructions, '']
-    }))
-  }
-
-  const removeInstruction = (index) => {
-    setFormData(prev => ({
-      ...prev,
-      instructions: prev.instructions.filter((_, i) => i !== index)
-    }))
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-
+  const loadIngredients = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      
-      // Get restaurant_id from team_members
-      const { data: memberData } = await supabase
+      const { data: member } = await supabase
         .from('team_members')
         .select('restaurant_id')
         .eq('id', user.id)
         .single()
 
-      const recipeData = {
-        ...formData,
-        restaurant_id: memberData.restaurant_id,
-        is_active: true
-      }
+      const { data } = await supabase
+        .from('ingredients')
+        .select('*')
+        .eq('restaurant_id', member.restaurant_id)
+        .order('name')
 
-      let result
-      if (recipe?.id) {
-        // Update existing
-        result = await supabase
-          .from('recipes')
-          .update(recipeData)
-          .eq('id', recipe.id)
-      } else {
-        // Create new
-        result = await supabase
-          .from('recipes')
-          .insert(recipeData)
-      }
-
-      if (result.error) throw result.error
-      onSave()
+      setIngredients(data || [])
     } catch (err) {
-      setError(err.message)
+      console.error('Error loading ingredients:', err)
+    }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: member } = await supabase
+        .from('team_members')
+        .select('restaurant_id')
+        .eq('id', user.id)
+        .single()
+
+      // Rezept speichern
+      const { data: recipe, error: recipeError } = await supabase
+        .from('recipes')
+        .insert({
+          restaurant_id: member.restaurant_id,
+          name: formData.name,
+          original_name: formData.original_name || null,
+          category: formData.category,
+          portions: parseInt(formData.portions) || 4,
+          description: formData.description,
+          selling_price: parseFloat(formData.selling_price) || 0,
+          steps: formData.steps.filter(s => s.trim()),
+          image_url: formData.image_url || null
+        })
+        .select()
+        .single()
+
+      if (recipeError) throw recipeError
+
+      // Zutaten verknüpfen
+      for (const ri of recipeIngredients) {
+        if (ri.ingredient_id && ri.amount > 0) {
+          await supabase.from('recipe_ingredients').insert({
+            recipe_id: recipe.id,
+            ingredient_id: ri.ingredient_id,
+            amount: parseFloat(ri.amount)
+          })
+        }
+      }
+
+      if (onSaved) {
+        onSaved(recipe)
+      } else {
+        navigate(`/recipe/${recipe.id}`)
+      }
+
+    } catch (err) {
+      console.error('Error saving recipe:', err)
+      alert('Fehler beim Speichern: ' + err.message)
     } finally {
       setLoading(false)
     }
   }
 
+  const addIngredient = () => {
+    setRecipeIngredients([...recipeIngredients, { ingredient_id: '', amount: '' }])
+  }
+
+  const updateIngredient = (index, field, value) => {
+    const updated = [...recipeIngredients]
+    updated[index][field] = value
+    setRecipeIngredients(updated)
+  }
+
+  const removeIngredient = (index) => {
+    setRecipeIngredients(recipeIngredients.filter((_, i) => i !== index))
+  }
+
+  const addStep = () => {
+    setFormData({ ...formData, steps: [...formData.steps, ''] })
+  }
+
+  const updateStep = (index, value) => {
+    const updated = [...formData.steps]
+    updated[index] = value
+    setFormData({ ...formData, steps: updated })
+  }
+
+  const removeStep = (index) => {
+    setFormData({ ...formData, steps: formData.steps.filter((_, i) => i !== index) })
+  }
+
   return (
-    <div style={styles.overlay}>
-      <div style={styles.modal}>
-        <h2 style={styles.title}>{recipe ? 'Rezept bearbeiten' : 'Neues Rezept'}</h2>
-        
-        {error && <p style={styles.error}>{error}</p>}
-        
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <div style={styles.row}>
-            <div style={styles.field}>
-              <label style={styles.label}>Name</label>
+    <div className="recipe-form-container" style={{ padding: '2rem', maxWidth: '800px' }}>
+      <header className="page-header" style={{ marginBottom: '2rem' }}>
+        <span className="eyebrow">REZEPT</span>
+        <h1>Neues <span className="accent">Rezept</span> anlegen</h1>
+      </header>
+
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* Grunddaten */}
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <h3 style={{ marginBottom: '1rem', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+            Grunddaten
+          </h3>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-field">
+              <label>Name (Deutsch) *</label>
               <input
                 type="text"
-                name="name"
                 value={formData.name}
-                onChange={handleChange}
-                style={styles.input}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="z.B. Phở Bò"
                 required
               />
             </div>
             
-            <div style={styles.field}>
-              <label style={styles.label}>Kategorie</label>
+            <div className="form-field">
+              <label>Originalname (optional)</label>
+              <input
+                type="text"
+                value={formData.original_name}
+                onChange={(e) => setFormData({ ...formData, original_name: e.target.value })}
+                placeholder="z.B. phở bò"
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+            <div className="form-field">
+              <label>Kategorie</label>
               <select
-                name="category"
                 value={formData.category}
-                onChange={handleChange}
-                style={styles.input}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
               >
                 <option value="Vorspeise">Vorspeise</option>
                 <option value="Hauptgericht">Hauptgericht</option>
                 <option value="Nachspeise">Nachspeise</option>
-                <option value="Getränk">Getränk</option>
+                <option value="Beilage">Beilage</option>
               </select>
             </div>
-          </div>
-
-          <div style={styles.field}>
-            <label style={styles.label}>Beschreibung</label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              style={{ ...styles.input, minHeight: '80px' }}
-              rows={3}
-            />
-          </div>
-
-          <div style={styles.row}>
-            <div style={styles.field}>
-              <label style={styles.label}>Zubereitungszeit (Min)</label>
+            
+            <div className="form-field">
+              <label>Portionen</label>
               <input
                 type="number"
-                name="prep_time"
-                value={formData.prep_time}
-                onChange={handleChange}
-                style={styles.input}
-                min={1}
+                min="1"
+                value={formData.portions}
+                onChange={(e) => setFormData({ ...formData, portions: e.target.value })}
               />
             </div>
             
-            <div style={styles.field}>
-              <label style={styles.label}>Verkaufspreis (€)</label>
+            <div className="form-field">
+              <label>Verkaufspreis (€)</label>
               <input
                 type="number"
-                name="sell_price"
-                value={formData.sell_price}
-                onChange={handleChange}
-                style={styles.input}
                 step="0.01"
                 min="0"
-              />
-            </div>
-            
-            <div style={styles.field}>
-              <label style={styles.label}>Portionen</label>
-              <input
-                type="number"
-                name="portions"
-                value={formData.portions}
-                onChange={handleChange}
-                style={styles.input}
-                min={1}
+                value={formData.selling_price}
+                onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })}
+                placeholder="0.00"
               />
             </div>
           </div>
 
-          <div style={styles.field}>
-            <label style={styles.label}>Zubereitung</label>
-            {formData.instructions.map((instruction, index) => (
-              <div key={index} style={styles.instructionRow}>
-                <span style={styles.stepNumber}>{index + 1}.</span>
-                <input
-                  type="text"
-                  value={instruction}
-                  onChange={(e) => handleInstructionChange(index, e.target.value)}
-                  style={{ ...styles.input, flex: 1 }}
-                  placeholder={`Schritt ${index + 1}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeInstruction(index)}
-                  style={styles.removeBtn}
-                  disabled={formData.instructions.length <= 1}
+          <div className="form-field" style={{ marginTop: '1rem' }}>
+            <label>Beschreibung</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Kurze Beschreibung des Gerichts..."
+              rows="3"
+              style={{ width: '100%', resize: 'vertical' }}
+            />
+          </div>
+        </div>
+
+        {/* Zutaten */}
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+              Zutaten
+            </h3>
+            <button type="button" className="btn-secondary" onClick={addIngredient}>
+              + Zutat hinzufügen
+            </button>
+          </div>
+
+          {recipeIngredients.length === 0 && (
+            <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              Noch keine Zutaten hinzugefügt
+            </p>
+          )}
+
+          {recipeIngredients.map((ri, index) => (
+            <div key={index} style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem', alignItems: 'flex-end' }}>
+              <div className="form-field" style={{ flex: 2 }}>
+                <label>Zutat</label>
+                <select
+                  value={ri.ingredient_id}
+                  onChange={(e) => updateIngredient(index, 'ingredient_id', e.target.value)}
+                  style={{ width: '100%' }}
                 >
-                  ✕
-                </button>
+                  <option value="">Wählen...</option>
+                  {ingredients.map(ing => (
+                    <option key={ing.id} value={ing.id}>
+                      {ing.name} {ing.original_name && `(${ing.original_name})`}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ))}
-            <button type="button" onClick={addInstruction} style={styles.addBtn}>
-              + Schritt hinzufügen
+              
+              <div className="form-field" style={{ flex: 1 }}>
+                <label>Menge</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={ri.amount}
+                  onChange={(e) => updateIngredient(index, 'amount', e.target.value)}
+                  placeholder="500"
+                />
+              </div>
+              
+              <button
+                type="button"
+                onClick={() => removeIngredient(index)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--danger)',
+                  cursor: 'pointer',
+                  fontSize: '1.25rem',
+                  padding: '0.5rem'
+                }}
+              >
+                🗑️
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Zubereitung */}
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+              Zubereitung
+            </h3>
+            <button type="button" className="btn-secondary" onClick={addStep}>
+              + Schritt
             </button>
           </div>
 
-          <div style={styles.buttons}>
-            <button type="button" onClick={onCancel} style={styles.cancelBtn}>
-              Abbrechen
-            </button>
-            <button type="submit" style={styles.saveBtn} disabled={loading}>
-              {loading ? 'Speichern...' : 'Speichern'}
-            </button>
-          </div>
-        </form>
-      </div>
+          {formData.steps.map((step, index) => (
+            <div key={index} style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem', alignItems: 'flex-start' }}>
+              <span style={{ 
+                width: '28px', 
+                height: '28px', 
+                background: 'var(--cognac)', 
+                color: 'white',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: '600',
+                flexShrink: 0,
+                marginTop: '0.5rem'
+              }}>
+                {index + 1}
+              </span>
+              <textarea
+                value={step}
+                onChange={(e) => updateStep(index, e.target.value)}
+                placeholder={`Schritt ${index + 1}...`}
+                rows="2"
+                style={{ flex: 1, resize: 'vertical' }}
+              />
+              <button
+                type="button"
+                onClick={() => removeStep(index)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--danger)',
+                  cursor: 'pointer',
+                  fontSize: '1.25rem',
+                  padding: '0.5rem'
+                }}
+              >
+                🗑️
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => onClose ? onClose() : navigate('/recipes')}
+          >
+            Abbrechen
+          </button>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={loading || !formData.name}
+          >
+            {loading ? 'Wird gespeichert...' : 'Rezept speichern'}
+          </button>
+        </div>
+      </form>
     </div>
   )
-}
-
-const styles = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.8)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    padding: '1rem',
-  },
-  modal: {
-    background: 'var(--color-bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '2rem',
-    width: '100%',
-    maxWidth: '600px',
-    maxHeight: '90vh',
-    overflow: 'auto',
-  },
-  title: {
-    fontSize: '1.5rem',
-    fontWeight: 700,
-    marginBottom: '1.5rem',
-    color: 'var(--color-accent)',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-  },
-  row: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '1rem',
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-  },
-  label: {
-    fontSize: '0.875rem',
-    fontWeight: 500,
-    color: 'var(--color-text-muted)',
-  },
-  input: {
-    background: 'var(--color-bg-input)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.75rem',
-    color: 'var(--color-text)',
-    fontSize: '1rem',
-  },
-  instructionRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    marginBottom: '0.5rem',
-  },
-  stepNumber: {
-    color: 'var(--color-accent)',
-    fontWeight: 600,
-    minWidth: '24px',
-  },
-  removeBtn: {
-    background: 'var(--color-danger)',
-    color: 'white',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    width: '28px',
-    height: '28px',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
-  },
-  addBtn: {
-    background: 'transparent',
-    border: '1px dashed var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.75rem',
-    color: 'var(--color-accent)',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
-    marginTop: '0.5rem',
-  },
-  buttons: {
-    display: 'flex',
-    gap: '1rem',
-    justifyContent: 'flex-end',
-    marginTop: '1.5rem',
-    paddingTop: '1.5rem',
-    borderTop: '1px solid var(--color-border)',
-  },
-  cancelBtn: {
-    background: 'transparent',
-    border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.75rem 1.5rem',
-    color: 'var(--color-text)',
-    cursor: 'pointer',
-  },
-  saveBtn: {
-    background: 'var(--color-accent)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.75rem 1.5rem',
-    color: 'white',
-    cursor: 'pointer',
-    fontWeight: 600,
-  },
-  error: {
-    color: 'var(--color-danger)',
-    padding: '0.75rem',
-    background: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: 'var(--radius-md)',
-    marginBottom: '1rem',
-  },
 }

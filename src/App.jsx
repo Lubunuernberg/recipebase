@@ -7,7 +7,7 @@ import Recipes from './components/Recipes'
 import RecipeDetail from './components/RecipeDetail'
 import Ingredients from './components/Ingredients'
 import InvoiceAnalyzer from './components/InvoiceAnalyzer'
-import VoiceInput from './components/VoiceInput'
+import RecipeForm from './components/RecipeForm'
 
 // Rollen-Definition
 const ROLES = {
@@ -150,7 +150,7 @@ function AppContent() {
           <Route path="/recipe/:id" element={<RecipeDetail userRole={userRole} />} />
           <Route path="/ingredients" element={userRole !== 'cook' ? <Ingredients userRole={userRole} /> : <Navigate to="/" />} />
           <Route path="/invoices" element={userRole !== 'cook' ? <InvoiceAnalyzer /> : <Navigate to="/" />} />
-          <Route path="/voice" element={<VoiceInput />} />
+          <Route path="/recipe/new" element={<RecipeForm userRole={userRole} />} />
         </Routes>
       </main>
     </div>
@@ -164,9 +164,9 @@ function Sidebar({ userRole }) {
   const navItems = [
     { path: '/', label: 'Übersicht', icon: '◎', allowed: ['chef', 'cook', 'manager'] },
     { path: '/recipes', label: 'Rezepte', icon: '○', allowed: ['chef', 'cook', 'manager'] },
+    { path: '/recipe/new', label: '+ Neues Rezept', icon: '+', allowed: ['chef'] },
     { path: '/ingredients', label: 'Zutaten', icon: '□', allowed: ['chef', 'manager'] },
     { path: '/invoices', label: 'Rechnungen', icon: '△', allowed: ['chef', 'manager'] },
-    { path: '/voice', label: 'Sprache', icon: '♪', allowed: ['chef', 'cook'] },
   ].filter(item => item.allowed.includes(userRole))
 
   return (
