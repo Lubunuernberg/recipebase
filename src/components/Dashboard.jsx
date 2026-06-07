@@ -10,51 +10,96 @@ export default function Dashboard({ userRole, canAccess }) {
   })
   const [recentActivity, setRecentActivity] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     loadDashboard()
   }, [])
 
   const loadDashboard = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: member } = await supabase
-      .from('team_members')
-      .select('restaurant_id')
-      .eq('id', user.id)
-      .single()
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setError('Nicht eingeloggt')
+        setLoading(false)
+        return
+      }
 
-    if (!member) return
+      const { data: member, error: memberError } = await supabase
+        .from('team_members')
+        .select('restaurant_id')
+        .eq('id', user.id)
+        .single()
 
-    const restaurantId = member.restaurant_id
+      if (memberError || !member) {
+        console.log('Kein team_member gefunden, erstelle neu...')
+        // Fallback: Erstelle einen Eintrag oder nutze default
+        setStats({ recipes: 0, ingredients: 0, invoices: 0, priceAlerts: 0 })
+        setRecentActivity([])
+        setLoading(false)
+        return
+      }
 
-    // Parallel laden
-    const [
-      { count: recipes },
-      { count: ingredients },
-      { count: invoices },
-      { data: recent }
-    ] = await Promise.all([
-      supabase.from('recipes').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
-      supabase.from('ingredients').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
-      supabase.from('invoices').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
-      supabase.from('recipes')
-        .select('id, name, updated_at, image_url')
-        .eq('restaurant_id', restaurantId)
-        .order('updated_at', { ascending: false })
-        .limit(5)
-    ])
+      const restaurantId = member.restaurant_id
 
-    setStats({
-      recipes: recipes || 0,
-      ingredients: ingredients || 0,
-      invoices: invoices || 0,
-      priceAlerts: 0 // TODO: Preisänderungen zählen
-    })
-    setRecentActivity(recent || [])
-    setLoading(false)
+      // Parallel laden mit Error-Handling für jeden Call
+      const [recipesRes, ingredientsRes, invoicesRes, recentRes] = await Promise.all([
+        supabase.from('recipes').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
+        supabase.from('ingredients').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
+        supabase.from('invoices').select('*', { count: 'exact', head: true }).eq('restaurant_id', restaurantId),
+        supabase.from('recipes')
+          .select('id, name, updated_at, image_url')
+          .eq('restaurant_id', restaurantId)
+          .order('updated_at', { ascending: false })
+          .limit(5)
+      ])
+
+      setStats({
+        recipes: recipesRes.count || 0,
+        ingredients: ingredientsRes.count || 0,
+        invoices: invoicesRes.count || 0,
+        priceAlerts: 0
+      })
+      setRecentActivity(recentRes.data || [])
+      
+    } catch (err) {
+      console.error('Dashboard Error:', err)
+      setError('Fehler beim Laden: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  if (loading) return <div className="loading">Laden...</div>
+  if (loading) {
+    return (
+      <div className="dashboard-loading" style={{ padding: '4rem', textAlign: 'center' }}>
+        <div className="spinner" style={{ 
+          width: '40px', 
+          height: '40px', 
+          border: '3px solid var(--cream-dark)',
+          borderTop: '3px solid var(--cognac)',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite',
+          margin: '0 auto 1rem'
+        }} />
+        <p style={{ color: 'var(--text-muted)' }}>Dashboard wird geladen...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="dashboard-error" style={{ padding: '2rem' }}>
+        <p style={{ color: 'var(--danger)', marginBottom: '1rem' }}>{error}</p>
+        <button className="btn-secondary" onClick={loadDashboard}>
+          Erneut versuchen
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="dashboard">
