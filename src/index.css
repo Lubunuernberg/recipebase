@@ -554,6 +554,23 @@ h3 {
   border-color: var(--cognac);
 }
 
+/* Danger Button */
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-danger:hover {
+  background: #8B3333;
+}
+
 /* Error Box */
 .error-box {
   background: rgba(166, 68, 68, 0.1);

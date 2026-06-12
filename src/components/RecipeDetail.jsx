@@ -10,19 +10,45 @@ export default function RecipeDetail({ userRole }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showVoiceModal, setShowVoiceModal] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState(null)
+  const [allIngredients, setAllIngredients] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
     if (id) {
       loadRecipe()
+      loadAllIngredients()
     }
   }, [id])
+
+  const loadAllIngredients = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: member } = await supabase
+        .from('team_members')
+        .select('restaurant_id')
+        .eq('id', user.id)
+        .single()
+
+      const { data } = await supabase
+        .from('ingredients')
+        .select('*')
+        .eq('restaurant_id', member.restaurant_id)
+        .order('name')
+
+      setAllIngredients(data || [])
+    } catch (err) {
+      console.error('Error loading ingredients:', err)
+    }
+  }
 
   const loadRecipe = async () => {
     setLoading(true)
     setError(null)
     
     try {
-      // Load recipe
       const { data: recipeData, error: recipeError } = await supabase
         .from('recipes')
         .select('*')
@@ -31,10 +57,11 @@ export default function RecipeDetail({ userRole }) {
       
       if (recipeError) throw recipeError
       
-      // Load ingredients
       const { data: ingredientsData } = await supabase
         .from('recipe_ingredients')
         .select(`
+          id,
+          ingredient_id,
           amount,
           ingredients:ingredient_id (
             id,
@@ -48,11 +75,81 @@ export default function RecipeDetail({ userRole }) {
       
       setRecipe(recipeData)
       setIngredients(ingredientsData || [])
+      setEditForm({
+        name: recipeData.name,
+        original_name: recipeData.original_name || '',
+        category: recipeData.category || 'Hauptgericht',
+        portions: recipeData.portions || 4,
+        description: recipeData.description || '',
+        selling_price: recipeData.selling_price || '',
+        steps: recipeData.steps?.length > 0 ? recipeData.steps : [''],
+        image_url: recipeData.image_url || ''
+      })
     } catch (err) {
       console.error('Error loading recipe:', err)
       setError('Rezept konnte nicht geladen werden')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleUpdate = async (formData, recipeIngredients) => {
+    setSaving(true)
+    try {
+      const { error: updateError } = await supabase
+        .from('recipes')
+        .update({
+          name: formData.name,
+          original_name: formData.original_name || null,
+          category: formData.category,
+          portions: parseInt(formData.portions) || 4,
+          description: formData.description,
+          selling_price: parseFloat(formData.selling_price) || 0,
+          steps: formData.steps.filter(s => s.trim()),
+          image_url: formData.image_url || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+
+      const existingIds = recipeIngredients.filter(ri => ri.id).map(ri => ri.id)
+      await supabase
+        .from('recipe_ingredients')
+        .delete()
+        .eq('recipe_id', id)
+        .not('id', 'in', `(${existingIds.join(',')})`)
+
+      for (const ri of recipeIngredients) {
+        if (ri.ingredient_id && ri.amount > 0) {
+          await supabase.from('recipe_ingredients').insert({
+            recipe_id: id,
+            ingredient_id: ri.ingredient_id,
+            amount: parseFloat(ri.amount)
+          })
+        }
+      }
+
+      await loadRecipe()
+      setIsEditing(false)
+    } catch (err) {
+      console.error('Error updating recipe:', err)
+      alert('Fehler beim Speichern: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!confirm('Rezept wirklich löschen?')) return
+    
+    try {
+      await supabase.from('recipe_ingredients').delete().eq('recipe_id', id)
+      await supabase.from('recipes').delete().eq('id', id)
+      navigate('/recipes')
+    } catch (err) {
+      console.error('Error deleting recipe:', err)
+      alert('Fehler beim Löschen: ' + err.message)
     }
   }
 
@@ -90,6 +187,18 @@ export default function RecipeDetail({ userRole }) {
 
   return (
     <div className="recipe-detail">
+      {isEditing ? (
+        <RecipeEditForm 
+          recipe={editForm}
+          setRecipe={setEditForm}
+          recipeIngredients={ingredients}
+          allIngredients={allIngredients}
+          onCancel={() => setIsEditing(false)}
+          onSave={handleUpdate}
+          saving={saving}
+        />
+      ) : (
+        <>
       <header className="detail-header">
         <div className="header-left">
           <button className="btn-back" onClick={() => navigate('/recipes')}>
@@ -109,7 +218,14 @@ export default function RecipeDetail({ userRole }) {
             🎤 Ergänzen
           </button>
           {userRole === 'chef' && (
-            <button className="btn-primary">Bearbeiten</button>
+            <>
+              <button className="btn-primary" onClick={() => setIsEditing(true)}>
+                Bearbeiten
+              </button>
+              <button className="btn-danger" onClick={handleDelete}>
+                Löschen
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -312,6 +428,274 @@ export default function RecipeDetail({ userRole }) {
           </div>
         </div>
       )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function RecipeEditForm({ recipe, setRecipe, recipeIngredients, allIngredients, onCancel, onSave, saving }) {
+  const [localIngredients, setLocalIngredients] = useState([])
+
+  useEffect(() => {
+    setLocalIngredients(recipeIngredients.map(ri => ({
+      id: ri.id,
+      ingredient_id: ri.ingredient_id || ri.ingredients?.id,
+      amount: ri.amount
+    })))
+  }, [recipeIngredients])
+
+  const addIngredient = () => {
+    setLocalIngredients([...localIngredients, { ingredient_id: '', amount: '' }])
+  }
+
+  const updateIngredient = (index, field, value) => {
+    const updated = [...localIngredients]
+    updated[index][field] = value
+    setLocalIngredients(updated)
+  }
+
+  const removeIngredient = (index) => {
+    setLocalIngredients(localIngredients.filter((_, i) => i !== index))
+  }
+
+  const addStep = () => {
+    setRecipe({ ...recipe, steps: [...recipe.steps, ''] })
+  }
+
+  const updateStep = (index, value) => {
+    const updated = [...recipe.steps]
+    updated[index] = value
+    setRecipe({ ...recipe, steps: updated })
+  }
+
+  const removeStep = (index) => {
+    setRecipe({ ...recipe, steps: recipe.steps.filter((_, i) => i !== index) })
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onSave(recipe, localIngredients)
+  }
+
+  return (
+    <div style={{ padding: '2rem', maxWidth: '800px' }}>
+      <header className="page-header" style={{ marginBottom: '2rem' }}>
+        <div>
+          <span className="eyebrow">REZEPT BEARBEITEN</span>
+          <h1>{recipe.name}</h1>
+        </div>
+      </header>
+
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <h3 style={{ marginBottom: '1rem', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+            Grunddaten
+          </h3>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-field">
+              <label>Name (Deutsch) *</label>
+              <input
+                type="text"
+                value={recipe.name}
+                onChange={(e) => setRecipe({ ...recipe, name: e.target.value })}
+                placeholder="z.B. Phở Bò"
+                required
+              />
+            </div>
+            
+            <div className="form-field">
+              <label>Originalname (optional)</label>
+              <input
+                type="text"
+                value={recipe.original_name}
+                onChange={(e) => setRecipe({ ...recipe, original_name: e.target.value })}
+                placeholder="z.B. phở bò"
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+            <div className="form-field">
+              <label>Kategorie</label>
+              <select
+                value={recipe.category}
+                onChange={(e) => setRecipe({ ...recipe, category: e.target.value })}
+              >
+                <option value="Vorspeise">Vorspeise</option>
+                <option value="Hauptgericht">Hauptgericht</option>
+                <option value="Nachspeise">Nachspeise</option>
+                <option value="Beilage">Beilage</option>
+              </select>
+            </div>
+            
+            <div className="form-field">
+              <label>Portionen</label>
+              <input
+                type="number"
+                min="1"
+                value={recipe.portions}
+                onChange={(e) => setRecipe({ ...recipe, portions: e.target.value })}
+              />
+            </div>
+            
+            <div className="form-field">
+              <label>Verkaufspreis (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={recipe.selling_price}
+                onChange={(e) => setRecipe({ ...recipe, selling_price: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+
+          <div className="form-field" style={{ marginTop: '1rem' }}>
+            <label>Beschreibung</label>
+            <textarea
+              value={recipe.description}
+              onChange={(e) => setRecipe({ ...recipe, description: e.target.value })}
+              placeholder="Kurze Beschreibung des Gerichts..."
+              rows="3"
+              style={{ width: '100%', resize: 'vertical' }}
+            />
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+              Zutaten
+            </h3>
+            <button type="button" className="btn-secondary" onClick={addIngredient}>
+              + Zutat hinzufügen
+            </button>
+          </div>
+
+          {localIngredients.length === 0 && (
+            <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Noch keine Zutaten hinzugefügt</p>
+          )}
+
+          {localIngredients.map((ri, index) => (
+            <div key={index} style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem', alignItems: 'flex-end' }}>
+              <div className="form-field" style={{ flex: 2 }}>
+                <label>Zutat</label>
+                <select
+                  value={ri.ingredient_id}
+                  onChange={(e) => updateIngredient(index, 'ingredient_id', e.target.value)}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">Wählen...</option>
+                  {allIngredients.map(ing => (
+                    <option key={ing.id} value={ing.id}>
+                      {ing.name} {ing.original_name && `(${ing.original_name})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="form-field" style={{ flex: 1 }}>
+                <label>Menge</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={ri.amount}
+                  onChange={(e) => updateIngredient(index, 'amount', e.target.value)}
+                  placeholder="500"
+                />
+              </div>
+              
+              <button
+                type="button"
+                onClick={() => removeIngredient(index)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--danger)',
+                  cursor: 'pointer',
+                  fontSize: '1.25rem',
+                  padding: '0.5rem'
+                }}
+              >
+                🗑️
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+              Zubereitung
+            </h3>
+            <button type="button" className="btn-secondary" onClick={addStep}>
+              + Schritt
+            </button>
+          </div>
+
+          {recipe.steps.map((step, index) => (
+            <div key={index} style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem', alignItems: 'flex-start' }}>
+              <span style={{ 
+                width: '28px', 
+                height: '28px', 
+                background: 'var(--cognac)', 
+                color: 'white',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: '600',
+                flexShrink: 0,
+                marginTop: '0.5rem'
+              }}>
+                {index + 1}
+              </span>
+              <textarea
+                value={step}
+                onChange={(e) => updateStep(index, e.target.value)}
+                placeholder={`Schritt ${index + 1}...`}
+                rows="2"
+                style={{ flex: 1, resize: 'vertical' }}
+              />
+              <button
+                type="button"
+                onClick={() => removeStep(index)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--danger)',
+                  cursor: 'pointer',
+                  fontSize: '1.25rem',
+                  padding: '0.5rem'
+                }}
+              >
+                🗑️
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onCancel}
+          >
+            Abbrechen
+          </button>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={saving || !recipe.name}
+          >
+            {saving ? 'Wird gespeichert...' : 'Änderungen speichern'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
