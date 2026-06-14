@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 
 const DAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag']
 
-export default function WeeklyMenu({ user }) {
+export default function WeeklyMenu() {
   const [recipes, setRecipes] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -36,16 +36,27 @@ export default function WeeklyMenu({ user }) {
 
   const loadData = async () => {
     setLoading(true)
-    
-    const [{ data: recipesData }, { data: menuData }] = await Promise.all([
-      supabase.from('recipes').select('*').eq('is_active', true).order('name'),
-      supabase.from('weekly_menu')
-        .select('*, recipes(*)')
-        .eq('date_range', selectedWeek)
-    ])
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: member } = await supabase
+        .from('team_members')
+        .select('restaurant_id')
+        .eq('id', user.id)
+        .single()
 
-    setRecipes(recipesData || [])
-    setMenuItems(menuData || [])
+      const [{ data: recipesData }, { data: menuData }] = await Promise.all([
+        supabase.from('recipes').select('*').eq('restaurant_id', member.restaurant_id).order('name'),
+        supabase.from('weekly_menu')
+          .select('*, recipes(*)')
+          .eq('date_range', selectedWeek)
+          .eq('restaurant_id', member.restaurant_id)
+      ])
+
+      setRecipes(recipesData || [])
+      setMenuItems(menuData || [])
+    } catch (err) {
+      console.error('Error loading weekly menu:', err)
+    }
     setLoading(false)
   }
 
@@ -62,18 +73,17 @@ export default function WeeklyMenu({ user }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     
-    const { data: { user: currentUser } } = await supabase.auth.getUser()
-    
-    const { data: memberData } = await supabase
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: member } = await supabase
       .from('team_members')
       .select('restaurant_id')
-      .eq('id', currentUser.id)
+      .eq('id', user.id)
       .single()
 
     const { error } = await supabase
       .from('weekly_menu')
       .insert({
-        restaurant_id: memberData.restaurant_id,
+        restaurant_id: member.restaurant_id,
         recipe_id: formData.recipe_id,
         day_of_week: selectedDay,
         portions: parseInt(formData.portions),
@@ -95,75 +105,108 @@ export default function WeeklyMenu({ user }) {
     if (!error) loadData()
   }
 
-  const calculateShoppingList = () => {
-    const needed = {}
-    
-    menuItems.forEach(menuItem => {
-      const recipe = menuItem.recipes
-      const factor = menuItem.portions / (recipe.portions || 1)
-      
-      // This would need recipe_ingredients data
-      // Simplified for now
-    })
-    
-    return needed
+  if (loading) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <div className="spinner" />
+        <p>Wochenmenü wird geladen...</p>
+      </div>
+    )
   }
 
-  if (loading) return <div style={styles.loading}>Laden...</div>
+  const totalRevenue = menuItems.reduce((sum, item) => {
+    return sum + ((item.recipes?.selling_price || 0) * (item.portions || 0))
+  }, 0)
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Wochenmenü</h1>
-        <div style={styles.weekSelector}>
+    <div style={{ padding: '2rem', maxWidth: '1200px' }}>
+      <header className="page-header" style={{ marginBottom: '2rem' }}>
+        <div>
+          <span className="eyebrow">PLANUNG</span>
+          <h1>Wochen<span className="accent">Menü</span></h1>
+        </div>
+        <div>
           <input
             type="week"
             value={selectedWeek}
             onChange={(e) => setSelectedWeek(e.target.value)}
-            style={styles.weekInput}
+            style={{
+              padding: '0.75rem 1rem',
+              border: '1px solid var(--cream-dark)',
+              borderRadius: '4px',
+              background: 'var(--paper)',
+              fontSize: '1rem'
+            }}
           />
         </div>
-      </div>
+      </header>
 
       {showForm && (
-        <div style={styles.formOverlay}>
-          <div style={styles.formModal}>
-            <h3 style={styles.formTitle}>{DAYS[selectedDay]} - Gericht hinzufügen</h3>
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(10, 9, 8, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}
+        onClick={() => setShowForm(false)}
+        >
+          <div 
+            style={{
+              background: 'var(--paper)',
+              borderRadius: '8px',
+              padding: '2rem',
+              maxWidth: '400px',
+              width: '100%'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ marginBottom: '1.5rem' }}>
+              {DAYS[selectedDay]} - Gericht hinzufügen
+            </h3>
             
             <form onSubmit={handleSubmit}>
-              <div style={styles.formField}>
+              <div className="form-field" style={{ marginBottom: '1rem' }}>
                 <label>Rezept</label>
                 <select
                   value={formData.recipe_id}
                   onChange={(e) => setFormData({...formData, recipe_id: e.target.value})}
-                  style={styles.input}
+                  style={{ width: '100%' }}
                   required
                 >
                   <option value="">Wählen...</option>
                   {recipes.map(recipe => (
                     <option key={recipe.id} value={recipe.id}>
-                      {recipe.name} ({recipe.sell_price}€)
+                      {recipe.name} ({recipe.selling_price?.toFixed(2)} €)
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div style={styles.formField}>
+              <div className="form-field" style={{ marginBottom: '1.5rem' }}>
                 <label>Portionen</label>
                 <input
                   type="number"
                   min="1"
                   value={formData.portions}
                   onChange={(e) => setFormData({...formData, portions: e.target.value})}
-                  style={styles.input}
+                  style={{ width: '100%' }}
                 />
               </div>
 
-              <div style={styles.formButtons}>
-                <button type="button" onClick={() => setShowForm(false)} style={styles.cancelBtn}>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setShowForm(false)} 
+                  className="btn-secondary"
+                  style={{ flex: 1 }}
+                >
                   Abbrechen
                 </button>
-                <button type="submit" style={styles.saveBtn}>
+                <button type="submit" className="btn-primary" style={{ flex: 1 }}>
                   Hinzufügen
                 </button>
               </div>
@@ -172,251 +215,128 @@ export default function WeeklyMenu({ user }) {
         </div>
       )}
 
-      <div style={styles.weekGrid}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '1.5rem',
+        marginBottom: '2rem'
+      }}>
         {DAYS.map((day, index) => {
           const dayMenu = getMenuForDay(index)
+          const dayRevenue = dayMenu.reduce((sum, item) => {
+            return sum + ((item.recipes?.selling_price || 0) * (item.portions || 0))
+          }, 0)
+
           return (
-            <div key={index} style={styles.dayCard}>
-              <div style={styles.dayHeader}>
-                <h3 style={styles.dayTitle}>{day}</h3>
+            <div key={index} className="card" style={{ minHeight: '250px' }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '1rem',
+                paddingBottom: '0.75rem',
+                borderBottom: '1px solid var(--cream-dark)'
+              }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>{day}</h3>
                 <button 
                   onClick={() => handleAdd(index)}
-                  style={styles.addBtn}
+                  className="btn-primary"
+                  style={{ 
+                    width: '32px', 
+                    height: '32px', 
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
                 >
                   +
                 </button>
               </div>
 
-              <div style={styles.dayContent}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {dayMenu.map(item => (
-                  <div key={item.id} style={styles.menuItem}>
-                    <div style={styles.menuInfo}>
-                      <span style={styles.menuName}>{item.recipes?.name}</span>
-                      <span style={styles.menuPortions}>{item.portions} Port.</span>
+                  <div key={item.id} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.75rem',
+                    background: 'var(--cream)',
+                    borderRadius: '4px'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: '0.9375rem' }}>
+                        {item.recipes?.name}
+                      </div>
+                      <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                        {item.portions} Port. | {((item.recipes?.selling_price || 0) * item.portions).toFixed(2)} €
+                      </div>
                     </div>
                     <button 
                       onClick={() => handleDelete(item.id)}
-                      style={styles.deleteBtn}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--danger)',
+                        cursor: 'pointer',
+                        fontSize: '1.25rem'
+                      }}
                     >
-                      ✕
+                      ×
                     </button>
                   </div>
                 ))}
                 
                 {dayMenu.length === 0 && (
-                  <p style={styles.empty}>Keine Gerichte</p>
+                  <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '2rem 0' }}>
+                    Keine Gerichte
+                  </p>
                 )}
               </div>
+
+              {dayRevenue > 0 && (
+                <div style={{
+                  marginTop: '1rem',
+                  paddingTop: '0.75rem',
+                  borderTop: '1px solid var(--cream-dark)',
+                  textAlign: 'right',
+                  fontSize: '0.875rem',
+                  color: 'var(--cognac)',
+                  fontWeight: 500
+                }}>
+                  Tagesumsatz: {dayRevenue.toFixed(2)} €
+                </div>
+              )}
             </div>
           )
         })}
       </div>
 
-      <div style={styles.summary}>
-        <h3 style={styles.summaryTitle}>Wochenübersicht</h3>
-        <div style={styles.summaryStats}>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryValue}>{menuItems.length}</span>
-            <span style={styles.summaryLabel}>Gerichte</span>
+      <div className="card" style={{ padding: '1.5rem' }}>
+        <h3 style={{ marginBottom: '1.5rem', fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+          Wochenübersicht
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', color: 'var(--cognac)' }}>
+              {menuItems.length}
+            </div>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Gerichte</div>
           </div>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryValue}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', color: 'var(--cognac)' }}>
               {menuItems.reduce((sum, item) => sum + (item.portions || 0), 0)}
-            </span>
-            <span style={styles.summaryLabel}>Portionen</span>
+            </div>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Portionen</div>
           </div>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryValue}>
-              {menuItems.reduce((sum, item) => sum + ((item.recipes?.sell_price || 0) * (item.portions || 0)), 0).toFixed(2)}€
-            </span>
-            <span style={styles.summaryLabel}>Umsatzpotenzial</span>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', color: 'var(--cognac)' }}>
+              {totalRevenue.toFixed(2)} €
+            </div>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Umsatzpotenzial</div>
           </div>
         </div>
       </div>
     </div>
   )
-}
-
-const styles = {
-  container: { maxWidth: '1200px' },
-  loading: { padding: '2rem', textAlign: 'center' },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1.5rem',
-  },
-  title: { fontSize: '1.5rem', fontWeight: 700 },
-  weekSelector: {},
-  weekInput: {
-    background: 'var(--color-bg-card)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.75rem',
-    color: 'var(--color-text)',
-    fontSize: '1rem',
-  },
-  formOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.8)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  formModal: {
-    background: 'var(--color-bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '2rem',
-    width: '100%',
-    maxWidth: '400px',
-  },
-  formTitle: {
-    fontSize: '1.25rem',
-    fontWeight: 600,
-    marginBottom: '1.5rem',
-  },
-  formField: {
-    marginBottom: '1rem',
-  },
-  input: {
-    width: '100%',
-    background: 'var(--color-bg-input)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.75rem',
-    color: 'var(--color-text)',
-    fontSize: '1rem',
-    marginTop: '0.25rem',
-  },
-  formButtons: {
-    display: 'flex',
-    gap: '1rem',
-    marginTop: '1.5rem',
-  },
-  cancelBtn: {
-    flex: 1,
-    background: 'transparent',
-    border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.75rem',
-    color: 'var(--color-text)',
-    cursor: 'pointer',
-  },
-  saveBtn: {
-    flex: 1,
-    background: 'var(--color-accent)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    padding: '0.75rem',
-    color: 'white',
-    cursor: 'pointer',
-    fontWeight: 600,
-  },
-  weekGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '1rem',
-    marginBottom: '2rem',
-  },
-  dayCard: {
-    background: 'var(--color-bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--color-border)',
-    minHeight: '200px',
-  },
-  dayHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '1rem',
-    borderBottom: '1px solid var(--color-border)',
-  },
-  dayTitle: {
-    fontSize: '1rem',
-    fontWeight: 600,
-  },
-  addBtn: {
-    background: 'var(--color-accent)',
-    color: 'white',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    width: '28px',
-    height: '28px',
-    cursor: 'pointer',
-    fontSize: '1.25rem',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayContent: {
-    padding: '0.75rem',
-  },
-  menuItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '0.5rem',
-    background: 'var(--color-bg)',
-    borderRadius: 'var(--radius-md)',
-    marginBottom: '0.5rem',
-  },
-  menuInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 1,
-  },
-  menuName: {
-    fontSize: '0.875rem',
-    fontWeight: 500,
-  },
-  menuPortions: {
-    fontSize: '0.75rem',
-    color: 'var(--color-text-muted)',
-  },
-  deleteBtn: {
-    background: 'transparent',
-    border: 'none',
-    color: 'var(--color-danger)',
-    cursor: 'pointer',
-    padding: '0.25rem',
-  },
-  empty: {
-    textAlign: 'center',
-    color: 'var(--color-text-muted)',
-    fontSize: '0.875rem',
-    padding: '1rem',
-  },
-  summary: {
-    background: 'var(--color-bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '1.5rem',
-    border: '1px solid var(--color-border)',
-  },
-  summaryTitle: {
-    fontSize: '1.125rem',
-    fontWeight: 600,
-    marginBottom: '1rem',
-  },
-  summaryStats: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '1rem',
-  },
-  summaryItem: {
-    textAlign: 'center',
-  },
-  summaryValue: {
-    fontSize: '1.5rem',
-    fontWeight: 700,
-    color: 'var(--color-accent)',
-  },
-  summaryLabel: {
-    fontSize: '0.875rem',
-    color: 'var(--color-text-muted)',
-  },
 }
