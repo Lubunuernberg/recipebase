@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { exportRecipeToPDF } from './RecipePDF'
 
 export default function RecipeDetail({ userRole }) {
   const { id } = useParams()
@@ -210,6 +211,9 @@ export default function RecipeDetail({ userRole }) {
         <div className="header-actions">
           <button className="btn-secondary" onClick={() => setShowVoiceModal(true)}>
             🎤 Ergänzen
+          </button>
+          <button className="btn-secondary" onClick={() => exportRecipeToPDF(recipe, ingredients)}>
+            📄 PDF Export
           </button>
           {userRole === 'chef' && (
             <>
