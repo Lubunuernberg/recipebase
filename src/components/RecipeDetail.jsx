@@ -14,7 +14,6 @@ export default function RecipeDetail({ userRole }) {
   const [editForm, setEditForm] = useState(null)
   const [allIngredients, setAllIngredients] = useState([])
   const [saving, setSaving] = useState(false)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -113,12 +112,7 @@ export default function RecipeDetail({ userRole }) {
 
       if (updateError) throw updateError
 
-      const existingIds = recipeIngredients.filter(ri => ri.id).map(ri => ri.id)
-      await supabase
-        .from('recipe_ingredients')
-        .delete()
-        .eq('recipe_id', id)
-        .not('id', 'in', `(${existingIds.join(',')})`)
+      await supabase.from('recipe_ingredients').delete().eq('recipe_id', id)
 
       for (const ri of recipeIngredients) {
         if (ri.ingredient_id && ri.amount > 0) {
@@ -436,6 +430,7 @@ export default function RecipeDetail({ userRole }) {
 
 function RecipeEditForm({ recipe, setRecipe, recipeIngredients, allIngredients, onCancel, onSave, saving }) {
   const [localIngredients, setLocalIngredients] = useState([])
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   useEffect(() => {
     setLocalIngredients(recipeIngredients.map(ri => ({
@@ -444,6 +439,35 @@ function RecipeEditForm({ recipe, setRecipe, recipeIngredients, allIngredients, 
       amount: ri.amount
     })))
   }, [recipeIngredients])
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    setUploadingImage(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('recipe-images')
+        .upload(fileName, file)
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('recipe-images')
+        .getPublicUrl(fileName)
+
+      setRecipe({ ...recipe, image_url: publicUrl })
+    } catch (err) {
+      console.error('Upload error:', err)
+      alert('Fehler beim Hochladen: ' + err.message)
+    } finally {
+      setUploadingImage(false)
+    }
+  }
 
   const addIngredient = () => {
     setLocalIngredients([...localIngredients, { ingredient_id: '', amount: '' }])
@@ -493,6 +517,57 @@ function RecipeEditForm({ recipe, setRecipe, recipeIngredients, allIngredients, 
             Grunddaten
           </h3>
           
+          <div className="form-field" style={{ marginBottom: '1rem' }}>
+            <label>Rezeptbild</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              {recipe.image_url ? (
+                <img 
+                  src={recipe.image_url} 
+                  alt="Vorschau" 
+                  style={{ width: '120px', height: '80px', objectFit: 'cover', borderRadius: '4px' }}
+                />
+              ) : (
+                <div style={{ 
+                  width: '120px', 
+                  height: '80px', 
+                  background: 'var(--cream)', 
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--text-muted)'
+                }}>
+                  Kein Bild
+                </div>
+              )}
+              <div>
+                <label 
+                  className="btn-secondary"
+                  style={{ cursor: 'pointer', display: 'inline-block' }}
+                >
+                  {uploadingImage ? 'Lädt...' : 'Bild hochladen'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    style={{ display: 'none' }}
+                    disabled={uploadingImage}
+                  />
+                </label>
+                {recipe.image_url && (
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={() => setRecipe({ ...recipe, image_url: '' })}
+                    style={{ marginLeft: '0.5rem' }}
+                  >
+                    Entfernen
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div className="form-field">
               <label>Name (Deutsch) *</label>
