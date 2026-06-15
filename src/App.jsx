@@ -10,6 +10,7 @@ import InvoiceAnalyzer from './components/InvoiceAnalyzer'
 import RecipeForm from './components/RecipeForm'
 import WeeklyMenu from './components/WeeklyMenu'
 import Inventory from './components/Inventory'
+import HACCP from './components/HACCP'
 
 // Rollen-Definition
 const ROLES = {
@@ -155,6 +156,7 @@ function AppContent() {
           <Route path="/recipe/new" element={<RecipeForm userRole={userRole} />} />
           <Route path="/weekly-menu" element={<WeeklyMenu />} />
           <Route path="/inventory" element={userRole !== 'cook' ? <Inventory userRole={userRole} /> : <Navigate to="/" />} />
+          <Route path="/haccp" element={<HACCP userRole={userRole} />} />
         </Routes>
       </main>
     </div>
@@ -171,6 +173,7 @@ function Sidebar({ userRole }) {
     { path: '/recipe/new', label: '+ Neues Rezept', icon: '+', allowed: ['chef'] },
     { path: '/weekly-menu', label: 'Wochenmenü', icon: '◎', allowed: ['chef', 'manager'] },
     { path: '/inventory', label: 'Inventar', icon: '□', allowed: ['chef', 'manager'] },
+    { path: '/haccp', label: 'HACCP', icon: '★', allowed: ['chef', 'cook', 'manager'] },
     { path: '/ingredients', label: 'Zutaten', icon: '◇', allowed: ['chef', 'manager'] },
     { path: '/invoices', label: 'Rechnungen', icon: '△', allowed: ['chef', 'manager'] },
   ].filter(item => item.allowed.includes(userRole))
